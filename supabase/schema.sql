@@ -14,11 +14,29 @@ create table if not exists public.reservations (
   phone text not null,
   seats integer not null check (seats between 1 and 24),
   deposit_per_seat integer not null default 10 check (deposit_per_seat >= 0),
-  deposit_status text not null default 'a-payer' check (deposit_status in ('a-payer', 'paye'))
+  deposit_status text not null default 'a-payer' check (deposit_status in ('a-payer', 'paye')),
+  mollie_payment_id text unique,
+  mollie_checkout_url text,
+  payment_status text not null default 'manual',
+  payment_amount_cents integer check (payment_amount_cents is null or payment_amount_cents >= 0),
+  payment_created_at timestamptz,
+  payment_paid_at timestamptz
 );
 
 create index if not exists reservations_service_date_idx
   on public.reservations (service_date);
+
+alter table public.reservations
+  add column if not exists mollie_payment_id text unique,
+  add column if not exists mollie_checkout_url text,
+  add column if not exists payment_status text not null default 'manual',
+  add column if not exists payment_amount_cents integer check (payment_amount_cents is null or payment_amount_cents >= 0),
+  add column if not exists payment_created_at timestamptz,
+  add column if not exists payment_paid_at timestamptz;
+
+create index if not exists reservations_mollie_payment_id_idx
+  on public.reservations (mollie_payment_id)
+  where mollie_payment_id is not null;
 
 create or replace function public.is_admin()
 returns boolean
@@ -241,9 +259,11 @@ using (public.is_admin());
 
 grant usage on schema public to anon, authenticated;
 grant execute on function public.get_public_availability(date, integer) to anon, authenticated;
-grant execute on function public.create_public_reservation(date, text, text, integer, integer) to anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant select, insert, update, delete on public.reservations to authenticated;
+revoke execute on function public.create_public_reservation(date, text, text, integer, integer) from public;
+revoke execute on function public.create_public_reservation(date, text, text, integer, integer) from anon, authenticated;
+grant execute on function public.create_public_reservation(date, text, text, integer, integer) to service_role;
 
 -- After creating your admin user in Supabase Auth, add it here:
 -- insert into public.admin_users (user_id) values ('00000000-0000-0000-0000-000000000000');

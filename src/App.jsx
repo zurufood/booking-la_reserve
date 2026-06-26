@@ -5,7 +5,6 @@ import {
   ChefHat,
   CreditCard,
   Edit3,
-  ExternalLink,
   LogIn,
   LogOut,
   Mail,
@@ -20,7 +19,7 @@ import {
   UtensilsCrossed,
   XCircle,
 } from 'lucide-react';
-import { MAX_SEATS, DEPOSIT_PER_SEAT, PAYMENT_URL } from './lib/config';
+import { MAX_SEATS, DEPOSIT_PER_SEAT } from './lib/config';
 import {
   formatDate,
   formatLongDate,
@@ -37,6 +36,7 @@ import {
   fetchPublicAvailability,
   fetchReservations,
   getDepositLabel,
+  getPaymentStatusLabel,
   updateAdminReservation,
 } from './lib/reservations';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
@@ -102,7 +102,6 @@ function ConfigNotice({ mode }) {
         </p>
         <pre>{`VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
-VITE_DEPOSIT_PAYMENT_URL=...
 VITE_DEPOSIT_PER_SEAT=10`}</pre>
         <span>{mode === 'admin' ? 'Le dashboard sera disponible après connexion admin.' : 'La page publique sera active après connexion à la base.'}</span>
       </section>
@@ -119,6 +118,9 @@ function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [receipt, setReceipt] = useState(null);
+  const [returnNotice, setReturnNotice] = useState(() => {
+    return new URLSearchParams(window.location.search).get('payment') === 'return';
+  });
 
   async function loadAvailability() {
     setLoading(true);
@@ -157,6 +159,7 @@ function SignupPage() {
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
     setReceipt(null);
+    setReturnNotice(false);
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
   }
 
@@ -200,15 +203,21 @@ function SignupPage() {
     setErrors({});
 
     try {
-      const nextReceipt = await createPublicReservation({
+      const payment = await createPublicReservation({
         date: selectedDate,
         email: form.email,
         phone: form.phone,
         seats: requestedSeats,
       });
 
-      setReceipt(nextReceipt);
-      await loadAvailability();
+      if (!payment?.checkoutUrl) {
+        setReceipt(payment);
+        await loadAvailability();
+        setErrors({ form: 'Inscription enregistrée, mais le lien Mollie est indisponible.' });
+        return;
+      }
+
+      window.location.assign(payment.checkoutUrl);
     } catch (error) {
       setErrors({ form: error.message });
     } finally {
@@ -227,7 +236,7 @@ function SignupPage() {
           <p className="eyebrow">Restaurant éphémère</p>
           <h1>Réserver une table</h1>
           <p className="lead">
-            Un jeudi par semaine, 24 places, menu unique et acompte à régler après inscription.
+            Un jeudi par semaine, 24 places, menu unique et acompte sécurisé via Mollie.
           </p>
         </div>
         <div className="capacity-badge">
@@ -267,6 +276,13 @@ function SignupPage() {
             </div>
             <UtensilsCrossed size={28} aria-hidden="true" />
           </div>
+
+          {returnNotice && (
+            <div className="alert info-alert">
+              Paiement reçu par Mollie. La confirmation peut prendre quelques secondes avant de
+              passer automatiquement dans le dashboard.
+            </div>
+          )}
 
           {loadError && (
             <div className="alert error-alert">
@@ -348,7 +364,7 @@ function SignupPage() {
 
             <button className="primary-button field-full" type="submit" disabled={submitting || loading}>
               <CheckCircle2 size={18} />
-              <span>{submitting ? 'Inscription...' : 'Valider l’inscription'}</span>
+              <span>{submitting ? 'Préparation du paiement...' : 'Valider et payer l’acompte'}</span>
             </button>
           </form>
 
@@ -359,18 +375,10 @@ function SignupPage() {
                 <strong>Inscription enregistrée</strong>
                 <span>
                   {receipt.seats} place{receipt.seats > 1 ? 's' : ''} pour le{' '}
-                  {formatLongDate(receipt.service_date)}.
+                  {formatLongDate(receipt.serviceDate)}.
                 </span>
               </div>
-              {PAYMENT_URL ? (
-                <a className="payment-button" href={PAYMENT_URL} target="_blank" rel="noreferrer">
-                  <CreditCard size={18} />
-                  Régler l’acompte
-                  <ExternalLink size={16} />
-                </a>
-              ) : (
-                <span className="payment-missing">Lien de paiement non configuré.</span>
-              )}
+              <span className="payment-missing">Lien Mollie indisponible.</span>
             </div>
           )}
         </section>
@@ -934,6 +942,11 @@ function AdminDashboard({ userEmail }) {
                         <span className={`status-pill status-${reservation.depositStatus}`}>
                           {getDepositLabel(reservation.depositStatus)}
                         </span>
+                        <span
+                          className={`payment-pill payment-${reservation.paymentStatus || 'manual'}`}
+                        >
+                          Mollie : {getPaymentStatusLabel(reservation.paymentStatus)}
+                        </span>
                       </div>
                       <div className="reservation-meta">
                         <a href={`mailto:${reservation.email}`}>
@@ -948,6 +961,9 @@ function AdminDashboard({ userEmail }) {
                           <CreditCard size={15} aria-hidden="true" />
                           {formatMoney(depositTotal)}
                         </span>
+                        {reservation.molliePaymentId && (
+                          <span>Paiement {reservation.molliePaymentId}</span>
+                        )}
                       </div>
                     </div>
 

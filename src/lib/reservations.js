@@ -1,4 +1,3 @@
-import { DEPOSIT_PER_SEAT } from './config';
 import { getTodayISO } from './dates';
 import { supabase } from './supabase';
 
@@ -7,8 +6,26 @@ export const depositOptions = [
   { value: 'paye', label: 'Acompte payé' },
 ];
 
+const paymentStatusLabels = {
+  manual: 'Manuel',
+  open: 'Paiement ouvert',
+  paid: 'Payé',
+  failed: 'Échoué',
+  canceled: 'Annulé',
+  expired: 'Expiré',
+  pending: 'En attente',
+  authorized: 'Autorisé',
+  setup_failed: 'Création échouée',
+  missing_checkout_url: 'Lien manquant',
+};
+
 export function getDepositLabel(status) {
   return depositOptions.find((option) => option.value === status)?.label ?? status;
+}
+
+export function getPaymentStatusLabel(status) {
+  if (!status) return 'Non créé';
+  return paymentStatusLabels[status] ?? status;
 }
 
 export function mapReservation(row) {
@@ -22,6 +39,15 @@ export function mapReservation(row) {
     seats: Number(row.seats),
     depositPerSeat: Number(row.deposit_per_seat),
     depositStatus: row.deposit_status,
+    molliePaymentId: row.mollie_payment_id,
+    mollieCheckoutUrl: row.mollie_checkout_url,
+    paymentStatus: row.payment_status,
+    paymentAmountCents:
+      row.payment_amount_cents === null || row.payment_amount_cents === undefined
+        ? null
+        : Number(row.payment_amount_cents),
+    paymentCreatedAt: row.payment_created_at,
+    paymentPaidAt: row.payment_paid_at,
   };
 }
 
@@ -60,17 +86,24 @@ export async function fetchPublicAvailability() {
 }
 
 export async function createPublicReservation({ date, email, phone, seats }) {
-  const { data, error } = await supabase.rpc('create_public_reservation', {
-    p_service_date: date,
-    p_email: email.trim().toLowerCase(),
-    p_phone: phone.trim(),
-    p_seats: Number(seats),
-    p_deposit_per_seat: DEPOSIT_PER_SEAT,
+  const { data, error } = await supabase.functions.invoke('create-reservation-payment', {
+    body: {
+      date,
+      email: email.trim().toLowerCase(),
+      phone: phone.trim(),
+      seats: Number(seats),
+    },
   });
 
-  throwIfError(error);
+  if (error) {
+    throw new Error(error.message || 'Paiement impossible.');
+  }
 
-  return data?.[0] || null;
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data || null;
 }
 
 export async function fetchReservations() {

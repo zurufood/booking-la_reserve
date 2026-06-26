@@ -419,6 +419,13 @@ pre {
   color: #991b1b;
 }
 
+.info-alert {
+  margin: 18px 20px 0;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
 .page-alert {
   margin-bottom: 14px;
 }
@@ -764,6 +771,39 @@ pre {
 .status-paye {
   background: #ecfdf5;
   color: #047857;
+}
+
+.payment-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.payment-paid {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.payment-open,
+.payment-pending,
+.payment-authorized {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.payment-failed,
+.payment-canceled,
+.payment-expired,
+.payment-setup_failed,
+.payment-missing_checkout_url {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .reservation-meta {
