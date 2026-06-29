@@ -22,6 +22,8 @@ const menuSections = [
 ];
 
 type ReservationConfirmation = {
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   seats: number;
@@ -58,6 +60,7 @@ function buildTextEmail(reservation: ReservationConfirmation) {
     'Paiement reçu. Merci pour votre confiance !',
     '',
     'Récapitulatif',
+    `Nom : ${reservation.firstName} ${reservation.lastName}`.trim(),
     `Places : ${reservation.seats}`,
     `Acompte réglé : ${formatMoney(depositTotal)}`,
     `Date et horaire : ${EVENT_DATETIME}`,
@@ -99,6 +102,7 @@ function buildHtmlEmail(reservation: ReservationConfirmation) {
 
             <div style="margin:0 0 24px;padding:16px;border:1px solid #d7dee8;border-radius:8px;background:#f8fafc;">
               <p style="margin:0 0 8px;"><strong>Places :</strong> ${reservation.seats}</p>
+              <p style="margin:0 0 8px;"><strong>Nom :</strong> ${escapeHtml(`${reservation.firstName} ${reservation.lastName}`.trim())}</p>
               <p style="margin:0 0 8px;"><strong>Acompte réglé :</strong> ${formatMoney(depositTotal)}</p>
               <p style="margin:0 0 8px;"><strong>Date et horaire :</strong> ${EVENT_DATETIME}</p>
               <p style="margin:0 0 8px;"><strong>Adresse :</strong> ${EVENT_ADDRESS}</p>

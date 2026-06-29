@@ -10,6 +10,8 @@ create table if not exists public.reservations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   service_date date not null,
+  first_name text not null default '',
+  last_name text not null default '',
   email text not null,
   phone text not null,
   seats integer not null check (seats between 1 and 24),
@@ -27,6 +29,8 @@ create index if not exists reservations_service_date_idx
   on public.reservations (service_date);
 
 alter table public.reservations
+  add column if not exists first_name text not null default '',
+  add column if not exists last_name text not null default '',
   add column if not exists mollie_payment_id text unique,
   add column if not exists mollie_checkout_url text,
   add column if not exists payment_status text not null default 'manual',
@@ -138,8 +142,12 @@ as $$
   order by dates.service_date;
 $$;
 
+drop function if exists public.create_public_reservation(date, text, text, integer, integer);
+
 create or replace function public.create_public_reservation(
   p_service_date date,
+  p_first_name text,
+  p_last_name text,
   p_email text,
   p_phone text,
   p_seats integer,
@@ -161,11 +169,21 @@ as $$
 declare
   booked_seats integer;
   new_id uuid;
+  normalized_first_name text := trim(p_first_name);
+  normalized_last_name text := trim(p_last_name);
   normalized_email text := lower(trim(p_email));
   normalized_phone text := trim(p_phone);
 begin
   if extract(dow from p_service_date)::integer <> 4 then
     raise exception 'Choisis un jeudi.';
+  end if;
+
+  if normalized_first_name = '' then
+    raise exception 'Prénom requis.';
+  end if;
+
+  if normalized_last_name = '' then
+    raise exception 'Nom requis.';
   end if;
 
   if normalized_email !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
@@ -197,6 +215,8 @@ begin
 
   insert into public.reservations (
     service_date,
+    first_name,
+    last_name,
     email,
     phone,
     seats,
@@ -205,6 +225,8 @@ begin
   )
   values (
     p_service_date,
+    normalized_first_name,
+    normalized_last_name,
     normalized_email,
     normalized_phone,
     p_seats,
@@ -261,9 +283,9 @@ grant usage on schema public to anon, authenticated;
 grant execute on function public.get_public_availability(date, integer) to anon, authenticated;
 grant execute on function public.is_admin() to authenticated;
 grant select, insert, update, delete on public.reservations to authenticated;
-revoke execute on function public.create_public_reservation(date, text, text, integer, integer) from public;
-revoke execute on function public.create_public_reservation(date, text, text, integer, integer) from anon, authenticated;
-grant execute on function public.create_public_reservation(date, text, text, integer, integer) to service_role;
+revoke execute on function public.create_public_reservation(date, text, text, text, text, integer, integer) from public;
+revoke execute on function public.create_public_reservation(date, text, text, text, text, integer, integer) from anon, authenticated;
+grant execute on function public.create_public_reservation(date, text, text, text, text, integer, integer) to service_role;
 
 -- After creating your admin user in Supabase Auth, add it here:
 -- insert into public.admin_users (user_id) values ('00000000-0000-0000-0000-000000000000');

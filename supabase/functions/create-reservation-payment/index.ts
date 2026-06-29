@@ -75,6 +75,8 @@ Deno.serve(async (req) => {
 
     const payload = await req.json();
     const serviceDate = NEXT_SERVICE_DATE;
+    const firstName = String(payload.firstName ?? '').trim();
+    const lastName = String(payload.lastName ?? '').trim();
     const email = String(payload.email ?? '').trim().toLowerCase();
     const phone = String(payload.phone ?? '').trim();
     const seats = Number(payload.seats);
@@ -89,6 +91,8 @@ Deno.serve(async (req) => {
       'create_public_reservation',
       {
         p_service_date: serviceDate,
+        p_first_name: firstName,
+        p_last_name: lastName,
         p_email: email,
         p_phone: phone,
         p_seats: seats,

@@ -46,6 +46,8 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const emptyAdminForm = {
   date: NEXT_SERVICE_DATE,
+  firstName: '',
+  lastName: '',
   email: '',
   phone: '',
   seats: 2,
@@ -111,7 +113,7 @@ VITE_DEPOSIT_PER_SEAT=10`}</pre>
 
 function SignupPage() {
   const [availability, setAvailability] = useState([]);
-  const [form, setForm] = useState({ email: '', phone: '', seats: 2 });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', seats: 2 });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -156,6 +158,14 @@ function SignupPage() {
   function validateSignup() {
     const nextErrors = {};
 
+    if (!form.firstName.trim()) {
+      nextErrors.firstName = 'Prénom requis';
+    }
+
+    if (!form.lastName.trim()) {
+      nextErrors.lastName = 'Nom requis';
+    }
+
     if (!emailPattern.test(form.email.trim())) {
       nextErrors.email = 'Email invalide';
     }
@@ -194,6 +204,8 @@ function SignupPage() {
 
     try {
       const payment = await createPublicReservation({
+        firstName: form.firstName,
+        lastName: form.lastName,
         email: form.email,
         phone: form.phone,
         seats: requestedSeats,
@@ -300,6 +312,30 @@ function SignupPage() {
               </div>
               {errors.date && <small>{errors.date}</small>}
             </div>
+
+            <label className="field">
+              <span>Prénom</span>
+              <input
+                value={form.firstName}
+                onChange={(event) => updateField('firstName', event.target.value)}
+                placeholder="Votre prénom"
+                autoComplete="given-name"
+                aria-invalid={Boolean(errors.firstName)}
+              />
+              {errors.firstName && <small>{errors.firstName}</small>}
+            </label>
+
+            <label className="field">
+              <span>Nom</span>
+              <input
+                value={form.lastName}
+                onChange={(event) => updateField('lastName', event.target.value)}
+                placeholder="Votre nom"
+                autoComplete="family-name"
+                aria-invalid={Boolean(errors.lastName)}
+              />
+              {errors.lastName && <small>{errors.lastName}</small>}
+            </label>
 
             <label className="field">
               <span>Email</span>
@@ -516,7 +552,10 @@ function AdminDashboard({ userEmail }) {
       .filter((reservation) => {
         const matchesQuery =
           !normalizedQuery ||
-          [reservation.email, reservation.phone].join(' ').toLocaleLowerCase('fr-FR').includes(normalizedQuery);
+          [reservation.firstName, reservation.lastName, reservation.email, reservation.phone]
+            .join(' ')
+            .toLocaleLowerCase('fr-FR')
+            .includes(normalizedQuery);
         const matchesPayment =
           paymentFilter === 'tous' || reservation.depositStatus === paymentFilter;
         const matchesDate = !dateFilter || reservation.date === dateFilter;
@@ -563,6 +602,14 @@ function AdminDashboard({ userEmail }) {
       nextErrors.date = 'Choisis un jeudi';
     }
 
+    if (!form.firstName.trim()) {
+      nextErrors.firstName = 'Prénom requis';
+    }
+
+    if (!form.lastName.trim()) {
+      nextErrors.lastName = 'Nom requis';
+    }
+
     if (!emailPattern.test(form.email.trim())) {
       nextErrors.email = 'Email invalide';
     }
@@ -599,6 +646,8 @@ function AdminDashboard({ userEmail }) {
 
     const payload = {
       date: form.date,
+      firstName: form.firstName,
+      lastName: form.lastName,
       email: form.email,
       phone: form.phone,
       seats: Number(form.seats),
@@ -632,6 +681,8 @@ function AdminDashboard({ userEmail }) {
     setEditingId(reservation.id);
     setForm({
       date: reservation.date,
+      firstName: reservation.firstName,
+      lastName: reservation.lastName,
       email: reservation.email,
       phone: reservation.phone,
       seats: reservation.seats,
@@ -773,6 +824,28 @@ function AdminDashboard({ userEmail }) {
             </div>
 
             <label className="field">
+              <span>Prénom</span>
+              <input
+                value={form.firstName}
+                onChange={(event) => updateForm('firstName', event.target.value)}
+                autoComplete="given-name"
+                aria-invalid={Boolean(formErrors.firstName)}
+              />
+              {formErrors.firstName && <small>{formErrors.firstName}</small>}
+            </label>
+
+            <label className="field">
+              <span>Nom</span>
+              <input
+                value={form.lastName}
+                onChange={(event) => updateForm('lastName', event.target.value)}
+                autoComplete="family-name"
+                aria-invalid={Boolean(formErrors.lastName)}
+              />
+              {formErrors.lastName && <small>{formErrors.lastName}</small>}
+            </label>
+
+            <label className="field">
               <span>Email</span>
               <input
                 value={form.email}
@@ -906,6 +979,9 @@ function AdminDashboard({ userEmail }) {
             ) : (
               filteredReservations.map((reservation) => {
                 const depositTotal = reservation.seats * reservation.depositPerSeat;
+                const reservationName =
+                  [reservation.firstName, reservation.lastName].filter(Boolean).join(' ') ||
+                  reservation.email;
 
                 return (
                   <article className="reservation-card" key={reservation.id}>
@@ -917,7 +993,7 @@ function AdminDashboard({ userEmail }) {
 
                     <div className="reservation-main">
                       <div className="reservation-title-row">
-                        <h3>{reservation.email}</h3>
+                        <h3>{reservationName}</h3>
                         <span className={`status-pill status-${reservation.depositStatus}`}>
                           {getDepositLabel(reservation.depositStatus)}
                         </span>
@@ -962,7 +1038,7 @@ function AdminDashboard({ userEmail }) {
                         className="icon-button"
                         type="button"
                         onClick={() => editReservation(reservation)}
-                        aria-label={`Modifier ${reservation.email}`}
+                        aria-label={`Modifier ${reservationName}`}
                       >
                         <Edit3 size={18} />
                       </button>
@@ -970,7 +1046,7 @@ function AdminDashboard({ userEmail }) {
                         className="icon-button danger"
                         type="button"
                         onClick={() => removeReservation(reservation.id)}
-                        aria-label={`Supprimer ${reservation.email}`}
+                        aria-label={`Supprimer ${reservationName}`}
                       >
                         <Trash2 size={18} />
                       </button>

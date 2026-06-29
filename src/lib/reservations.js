@@ -34,6 +34,8 @@ export function mapReservation(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     date: row.service_date,
+    firstName: row.first_name || '',
+    lastName: row.last_name || '',
     email: row.email,
     phone: row.phone,
     seats: Number(row.seats),
@@ -55,6 +57,8 @@ function toReservationRow(values) {
   const row = {};
 
   if ('date' in values) row.service_date = values.date;
+  if ('firstName' in values) row.first_name = values.firstName.trim();
+  if ('lastName' in values) row.last_name = values.lastName.trim();
   if ('email' in values) row.email = values.email.trim().toLowerCase();
   if ('phone' in values) row.phone = values.phone.trim();
   if ('seats' in values) row.seats = Number(values.seats);
@@ -108,10 +112,12 @@ export async function fetchPublicAvailability() {
   }));
 }
 
-export async function createPublicReservation({ email, phone, seats }) {
+export async function createPublicReservation({ firstName, lastName, email, phone, seats }) {
   const { data, error } = await supabase.functions.invoke('create-reservation-payment', {
     body: {
       date: NEXT_SERVICE_DATE,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
       seats: Number(seats),

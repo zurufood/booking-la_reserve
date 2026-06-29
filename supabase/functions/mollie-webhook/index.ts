@@ -16,6 +16,8 @@ type MolliePayment = {
 
 type ReservationRow = {
   id: string;
+  first_name: string;
+  last_name: string;
   email: string;
   phone: string;
   seats: number;
@@ -83,7 +85,7 @@ Deno.serve(async (req) => {
 
     const { data: reservationData, error: reservationError } = await supabase
       .from('reservations')
-      .select('id, email, phone, seats, deposit_per_seat, deposit_status, mollie_payment_id, payment_amount_cents')
+      .select('id, first_name, last_name, email, phone, seats, deposit_per_seat, deposit_status, mollie_payment_id, payment_amount_cents')
       .eq('id', reservationId)
       .single();
 
@@ -130,6 +132,8 @@ Deno.serve(async (req) => {
     if (payment.status === 'paid' && reservation.deposit_status !== 'paye') {
       try {
         await sendReservationConfirmationEmail({
+          firstName: reservation.first_name,
+          lastName: reservation.last_name,
           email: reservation.email,
           phone: reservation.phone,
           seats: reservation.seats,
