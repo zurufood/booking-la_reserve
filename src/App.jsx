@@ -268,8 +268,7 @@ function SignupPage() {
 
           {returnNotice && (
             <div className="alert info-alert">
-              Paiement reçu par Mollie. La confirmation peut prendre quelques secondes avant de
-              passer automatiquement dans le dashboard.
+              Paiement reçu. Merci pour votre confiance !
             </div>
           )}
 
