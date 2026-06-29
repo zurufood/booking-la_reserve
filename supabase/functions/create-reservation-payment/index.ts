@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
       const errorText = await mollieResponse.text();
       await supabase
         .from('reservations')
-        .update({ payment_status: 'setup_failed' })
+        .delete()
         .eq('id', reservation.id);
 
       return errorResponse(
@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
     if (!payment.id || !checkoutUrl) {
       await supabase
         .from('reservations')
-        .update({ payment_status: 'missing_checkout_url' })
+        .delete()
         .eq('id', reservation.id);
 
       return errorResponse('Mollie n’a pas renvoyé de lien de paiement.', 502);

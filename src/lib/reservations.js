@@ -70,6 +70,29 @@ function throwIfError(error) {
   }
 }
 
+async function getFunctionErrorMessage(error) {
+  const response = error?.context;
+
+  if (response && typeof response.clone === 'function') {
+    try {
+      const body = await response.clone().json();
+      if (body?.error) return body.error;
+      if (body?.message) return body.message;
+    } catch {
+      // Fall through to text/error message handling.
+    }
+
+    try {
+      const text = await response.clone().text();
+      if (text) return text;
+    } catch {
+      // Fall through to the generic error message.
+    }
+  }
+
+  return error?.message || 'Paiement impossible.';
+}
+
 export async function fetchPublicAvailability() {
   const { data, error } = await supabase.rpc('get_public_availability', {
     p_start_date: NEXT_SERVICE_DATE,
@@ -96,7 +119,7 @@ export async function createPublicReservation({ email, phone, seats }) {
   });
 
   if (error) {
-    throw new Error(error.message || 'Paiement impossible.');
+    throw new Error(await getFunctionErrorMessage(error));
   }
 
   if (data?.error) {
