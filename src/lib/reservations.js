@@ -1,4 +1,4 @@
-import { getTodayISO } from './dates';
+import { NEXT_SERVICE_DATE } from './dates';
 import { supabase } from './supabase';
 
 export const depositOptions = [
@@ -72,8 +72,8 @@ function throwIfError(error) {
 
 export async function fetchPublicAvailability() {
   const { data, error } = await supabase.rpc('get_public_availability', {
-    p_start_date: getTodayISO(),
-    p_weeks: 16,
+    p_start_date: NEXT_SERVICE_DATE,
+    p_weeks: 1,
   });
 
   throwIfError(error);
@@ -85,10 +85,10 @@ export async function fetchPublicAvailability() {
   }));
 }
 
-export async function createPublicReservation({ date, email, phone, seats }) {
+export async function createPublicReservation({ email, phone, seats }) {
   const { data, error } = await supabase.functions.invoke('create-reservation-payment', {
     body: {
-      date,
+      date: NEXT_SERVICE_DATE,
       email: email.trim().toLowerCase(),
       phone: phone.trim(),
       seats: Number(seats),

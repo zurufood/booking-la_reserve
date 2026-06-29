@@ -1,3 +1,5 @@
+export const NEXT_SERVICE_DATE = '2026-07-16';
+
 export function toLocalISO(date) {
   const localDate = new Date(date);
   localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
@@ -27,7 +29,7 @@ export function addDays(date, days) {
 }
 
 export function getThursdayOptions(extraDates = []) {
-  const firstThursday = getNextThursday();
+  const firstThursday = NEXT_SERVICE_DATE;
   const dates = Array.from({ length: 16 }, (_, index) => addDays(firstThursday, index * 7));
 
   extraDates.forEach((date) => {

@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 import { corsHeaders, errorResponse, jsonResponse, textResponse } from '../_shared/http.ts';
 
 const MOLLIE_API_URL = 'https://api.mollie.com/v2/payments';
+const NEXT_SERVICE_DATE = '2026-07-16';
 
 type ReservationResult = {
   id: string;
@@ -66,7 +67,7 @@ Deno.serve(async (req) => {
     const depositPerSeat = getDepositPerSeat();
 
     const payload = await req.json();
-    const serviceDate = String(payload.date ?? '');
+    const serviceDate = NEXT_SERVICE_DATE;
     const email = String(payload.email ?? '').trim().toLowerCase();
     const phone = String(payload.phone ?? '').trim();
     const seats = Number(payload.seats);

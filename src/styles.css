@@ -294,6 +294,45 @@ pre {
   padding: 9px 11px;
 }
 
+.fixed-date-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid #cdd5df;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #121826;
+}
+
+.fixed-date-display[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.fixed-date-display svg {
+  flex: 0 0 auto;
+  color: #0f766e;
+}
+
+.fixed-date-display div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.fixed-date-display strong {
+  overflow-wrap: anywhere;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.fixed-date-display small {
+  color: #526070;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .field input:focus,
 .field select:focus,
 .search-field input:focus,

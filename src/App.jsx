@@ -21,10 +21,10 @@ import {
 } from 'lucide-react';
 import { MAX_SEATS, DEPOSIT_PER_SEAT } from './lib/config';
 import {
+  NEXT_SERVICE_DATE,
   formatDate,
   formatLongDate,
   formatMoney,
-  getNextThursday,
   getThursdayOptions,
   isThursday,
 } from './lib/dates';
@@ -45,7 +45,7 @@ import { menuSections } from './data/menu';
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const emptyAdminForm = {
-  date: getNextThursday(),
+  date: NEXT_SERVICE_DATE,
   email: '',
   phone: '',
   seats: 2,
@@ -111,7 +111,6 @@ VITE_DEPOSIT_PER_SEAT=10`}</pre>
 
 function SignupPage() {
   const [availability, setAvailability] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(getNextThursday());
   const [form, setForm] = useState({ email: '', phone: '', seats: 2 });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
@@ -129,15 +128,6 @@ function SignupPage() {
     try {
       const nextAvailability = await fetchPublicAvailability();
       setAvailability(nextAvailability);
-
-      const preferredDate =
-        nextAvailability.find((item) => item.date === selectedDate) ||
-        nextAvailability.find((item) => item.remainingSeats > 0) ||
-        nextAvailability[0];
-
-      if (preferredDate) {
-        setSelectedDate(preferredDate.date);
-      }
     } catch (error) {
       setLoadError(error.message);
     } finally {
@@ -151,7 +141,7 @@ function SignupPage() {
     }
   }, []);
 
-  const selectedAvailability = availability.find((item) => item.date === selectedDate);
+  const selectedAvailability = availability.find((item) => item.date === NEXT_SERVICE_DATE);
   const remainingSeats = selectedAvailability?.remainingSeats ?? 0;
   const requestedSeats = Number(form.seats) || 0;
   const depositTotal = requestedSeats * DEPOSIT_PER_SEAT;
@@ -174,8 +164,8 @@ function SignupPage() {
       nextErrors.phone = 'Téléphone requis';
     }
 
-    if (!selectedDate || !isThursday(selectedDate)) {
-      nextErrors.date = 'Choisis un jeudi';
+    if (!isThursday(NEXT_SERVICE_DATE)) {
+      nextErrors.date = "Date d'inscription invalide";
     }
 
     if (!requestedSeats || requestedSeats < 1) {
@@ -204,7 +194,6 @@ function SignupPage() {
 
     try {
       const payment = await createPublicReservation({
-        date: selectedDate,
         email: form.email,
         phone: form.phone,
         seats: requestedSeats,
@@ -236,7 +225,7 @@ function SignupPage() {
           <p className="eyebrow">Restaurant éphémère</p>
           <h1>Réserver une table</h1>
           <p className="lead">
-            Un jeudi par semaine, 24 places, menu unique et acompte sécurisé via Mollie.
+            Un jeudi par semaine, 24 places, un menu unique servi à Darwin, dans La Réserve.
           </p>
         </div>
         <div className="capacity-badge">
@@ -295,27 +284,23 @@ function SignupPage() {
           )}
 
           <form className="signup-form" onSubmit={handleSubmit}>
-            <label className="field field-full">
+            <div className="field field-full">
               <span>Jeudi</span>
-              <select
-                value={selectedDate}
-                onChange={(event) => {
-                  setSelectedDate(event.target.value);
-                  setReceipt(null);
-                  setErrors({});
-                }}
-                disabled={loading || availability.length === 0}
-                aria-invalid={Boolean(errors.date)}
-              >
-                {availability.map((item) => (
-                  <option key={item.date} value={item.date} disabled={item.remainingSeats === 0}>
-                    {formatLongDate(item.date)} - {item.remainingSeats} place
-                    {item.remainingSeats > 1 ? 's' : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="fixed-date-display" aria-invalid={Boolean(errors.date)}>
+                <CalendarDays size={20} aria-hidden="true" />
+                <div>
+                  <strong>{formatLongDate(NEXT_SERVICE_DATE)}</strong>
+                  <small>
+                    {loading
+                      ? 'Chargement des places...'
+                      : `${remainingSeats} place${remainingSeats > 1 ? 's' : ''} restante${
+                          remainingSeats > 1 ? 's' : ''
+                        }`}
+                  </small>
+                </div>
+              </div>
               {errors.date && <small>{errors.date}</small>}
-            </label>
+            </div>
 
             <label className="field">
               <span>Email</span>
@@ -486,7 +471,7 @@ function AdminDashboard({ userEmail }) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('tous');
-  const [dateFilter, setDateFilter] = useState(getNextThursday());
+  const [dateFilter, setDateFilter] = useState(NEXT_SERVICE_DATE);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyAdminForm);
   const [formErrors, setFormErrors] = useState({});
@@ -566,7 +551,7 @@ function AdminDashboard({ userEmail }) {
 
   function resetForm() {
     setEditingId(null);
-    setForm({ ...emptyAdminForm, date: getNextThursday() });
+    setForm({ ...emptyAdminForm, date: NEXT_SERVICE_DATE });
     setFormErrors({});
   }
 
@@ -773,25 +758,20 @@ function AdminDashboard({ userEmail }) {
           </div>
 
           <form className="reservation-form" onSubmit={handleAdminSubmit}>
-            <label className="field field-full">
+            <div className="field field-full">
               <span>Jeudi</span>
-              <select
-                value={form.date}
-                onChange={(event) => updateForm('date', event.target.value)}
-                aria-invalid={Boolean(formErrors.date)}
-              >
-                {serviceDates.map((date) => {
-                  const remaining = Math.max(0, MAX_SEATS - getBookedSeats(date, editingId));
-                  const isCurrentDate = date === form.date;
-                  return (
-                    <option key={date} value={date} disabled={!isCurrentDate && remaining === 0}>
-                      {formatLongDate(date)} - {remaining} place{remaining > 1 ? 's' : ''}
-                    </option>
-                  );
-                })}
-              </select>
+              <div className="fixed-date-display" aria-invalid={Boolean(formErrors.date)}>
+                <CalendarDays size={20} aria-hidden="true" />
+                <div>
+                  <strong>{formatLongDate(form.date)}</strong>
+                  <small>
+                    {availableSeatsForForm} place{availableSeatsForForm > 1 ? 's' : ''} disponible
+                    {availableSeatsForForm > 1 ? 's' : ''}
+                  </small>
+                </div>
+              </div>
               {formErrors.date && <small>{formErrors.date}</small>}
-            </label>
+            </div>
 
             <label className="field">
               <span>Email</span>
