@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
         await supabase.from('reservations').delete().eq('id', reservation.id);
 
         return errorResponse(
-          "Aucun moyen de paiement live n'est active dans Mollie pour ce profil.",
+          "Aucun moyen de paiement live n'est actif dans Mollie pour ce profil.",
           502,
         );
       }
