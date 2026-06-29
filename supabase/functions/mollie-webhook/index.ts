@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 import { errorResponse, textResponse } from '../_shared/http.ts';
+import { sendReservationConfirmationEmail } from '../_shared/reservation-email.ts';
 
 type MolliePayment = {
   id: string;
@@ -15,8 +16,11 @@ type MolliePayment = {
 
 type ReservationRow = {
   id: string;
+  email: string;
+  phone: string;
   seats: number;
   deposit_per_seat: number;
+  deposit_status: string;
   mollie_payment_id: string | null;
   payment_amount_cents: number | null;
 };
@@ -79,7 +83,7 @@ Deno.serve(async (req) => {
 
     const { data: reservationData, error: reservationError } = await supabase
       .from('reservations')
-      .select('id, seats, deposit_per_seat, mollie_payment_id, payment_amount_cents')
+      .select('id, email, phone, seats, deposit_per_seat, deposit_status, mollie_payment_id, payment_amount_cents')
       .eq('id', reservationId)
       .single();
 
@@ -121,6 +125,19 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       return errorResponse(updateError.message, 500);
+    }
+
+    if (payment.status === 'paid' && reservation.deposit_status !== 'paye') {
+      try {
+        await sendReservationConfirmationEmail({
+          email: reservation.email,
+          phone: reservation.phone,
+          seats: reservation.seats,
+          depositPerSeat: reservation.deposit_per_seat,
+        });
+      } catch (emailError) {
+        console.error(emailError instanceof Error ? emailError.message : emailError);
+      }
     }
 
     return textResponse('ok');

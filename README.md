@@ -32,6 +32,16 @@ supabase secrets set MOLLIE_WEBHOOK_URL=https://PROJECT_REF.functions.supabase.c
 supabase secrets set DEPOSIT_PER_SEAT=10
 ```
 
+## Emails de confirmation
+
+Les emails de confirmation sont envoyes par le webhook Mollie apres paiement confirme. Ajouter les secrets Supabase :
+
+```bash
+supabase secrets set RESEND_API_KEY=your_resend_api_key
+supabase secrets set RESERVATION_EMAIL_FROM="La Reserve - Darwin <reservation@votre-domaine.fr>"
+supabase secrets set RESERVATION_EMAIL_REPLY_TO=contact@votre-domaine.fr
+```
+
 Deployer les fonctions :
 
 ```bash
