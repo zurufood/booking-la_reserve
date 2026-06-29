@@ -32,6 +32,13 @@ type MolliePayment = {
   };
 };
 
+type MollieMethodsResponse = {
+  count?: number;
+  _embedded?: {
+    methods?: unknown[];
+  };
+};
+
 function requireEnv(name: string) {
   const value = Deno.env.get(name);
   if (!value) {
@@ -101,6 +108,31 @@ Deno.serve(async (req) => {
     const amountCents = reservation.seats * reservation.deposit_per_seat * 100;
     const amountValue = (amountCents / 100).toFixed(2);
     const redirectUrl = `${publicSiteUrl}/inscription?payment=return&reservation=${reservation.id}`;
+
+    const methodsUrl = new URL('https://api.mollie.com/v2/methods');
+    methodsUrl.searchParams.set('resource', 'payments');
+    methodsUrl.searchParams.set('amount[currency]', 'EUR');
+    methodsUrl.searchParams.set('amount[value]', amountValue);
+
+    const methodsResponse = await fetch(methodsUrl, {
+      headers: {
+        Authorization: `Bearer ${mollieApiKey}`,
+      },
+    });
+
+    if (methodsResponse.ok) {
+      const methods = (await methodsResponse.json()) as MollieMethodsResponse;
+      const methodCount = methods.count ?? methods._embedded?.methods?.length ?? 0;
+
+      if (methodCount === 0) {
+        await supabase.from('reservations').delete().eq('id', reservation.id);
+
+        return errorResponse(
+          "Aucun moyen de paiement live n'est active dans Mollie pour ce profil.",
+          502,
+        );
+      }
+    }
 
     const mollieResponse = await fetch(MOLLIE_API_URL, {
       method: 'POST',
