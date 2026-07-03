@@ -1,28 +1,7 @@
-create extension if not exists pgcrypto;
-
-create table if not exists public.admin_users (
-  user_id uuid primary key references auth.users (id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.reservations (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  service_date date not null,
-  first_name text not null default '',
-  last_name text not null default '',
-  email text not null,
-  phone text not null,
-  seats integer not null check (seats between 1 and 24)
-);
-
 drop index if exists public.reservations_mollie_payment_id_idx;
 drop trigger if exists reservations_enforce_capacity on public.reservations;
 
 alter table public.reservations
-  add column if not exists first_name text not null default '',
-  add column if not exists last_name text not null default '',
   drop column if exists deposit_per_seat,
   drop column if exists deposit_status,
   drop column if exists mollie_payment_id,
@@ -31,40 +10,6 @@ alter table public.reservations
   drop column if exists payment_amount_cents,
   drop column if exists payment_created_at,
   drop column if exists payment_paid_at;
-
-create index if not exists reservations_service_date_idx
-  on public.reservations (service_date);
-
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  );
-$$;
-
-create or replace function public.set_updated_at()
-returns trigger
-language plpgsql
-set search_path = public
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists reservations_set_updated_at on public.reservations;
-create trigger reservations_set_updated_at
-before update on public.reservations
-for each row
-execute function public.set_updated_at();
 
 create or replace function public.enforce_reservation_capacity()
 returns trigger
@@ -94,7 +39,6 @@ begin
 end;
 $$;
 
-drop trigger if exists reservations_enforce_capacity on public.reservations;
 create trigger reservations_enforce_capacity
 before insert or update of service_date, seats on public.reservations
 for each row
@@ -227,43 +171,5 @@ begin
 end;
 $$;
 
-alter table public.admin_users enable row level security;
-alter table public.reservations enable row level security;
-
-drop policy if exists "Admins can read reservations" on public.reservations;
-create policy "Admins can read reservations"
-on public.reservations
-for select
-to authenticated
-using (public.is_admin());
-
-drop policy if exists "Admins can insert reservations" on public.reservations;
-create policy "Admins can insert reservations"
-on public.reservations
-for insert
-to authenticated
-with check (public.is_admin());
-
-drop policy if exists "Admins can update reservations" on public.reservations;
-create policy "Admins can update reservations"
-on public.reservations
-for update
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
-
-drop policy if exists "Admins can delete reservations" on public.reservations;
-create policy "Admins can delete reservations"
-on public.reservations
-for delete
-to authenticated
-using (public.is_admin());
-
-grant usage on schema public to anon, authenticated;
 grant execute on function public.get_public_availability(date, integer) to anon, authenticated;
 grant execute on function public.create_public_reservation(date, text, text, text, text, integer) to anon, authenticated;
-grant execute on function public.is_admin() to authenticated;
-grant select, insert, update, delete on public.reservations to authenticated;
-
--- After creating your admin user in Supabase Auth, add it here:
--- insert into public.admin_users (user_id) values ('00000000-0000-0000-0000-000000000000');

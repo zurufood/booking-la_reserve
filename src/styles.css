@@ -294,8 +294,7 @@ pre {
 
 .field input,
 .field select,
-.search-field input,
-.reservation-actions select {
+.search-field input {
   width: 100%;
   border: 1px solid #d9c8df;
   border-radius: 7px;
@@ -309,8 +308,7 @@ pre {
 
 .field input,
 .field select,
-.search-field input,
-.reservation-actions select {
+.search-field input {
   min-height: 42px;
   padding: 9px 11px;
 }
@@ -356,8 +354,7 @@ pre {
 
 .field input:focus,
 .field select:focus,
-.search-field input:focus,
-.reservation-actions select:focus {
+.search-field input:focus {
   border-color: var(--brand-magenta);
   box-shadow: 0 0 0 3px rgba(216, 23, 168, 0.16);
 }
@@ -373,30 +370,10 @@ pre {
   font-weight: 700;
 }
 
-.deposit-summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 10px 12px;
-  border: 1px solid var(--brand-border);
-  border-radius: 8px;
-  background: #fff7fd;
-  color: var(--brand-muted);
-  font-weight: 800;
-}
-
-.deposit-summary strong {
-  margin-left: auto;
-  color: var(--brand-ink);
-  font-size: 1.08rem;
-}
-
 .primary-button,
 .secondary-button,
 .icon-button,
-.icon-text-button,
-.payment-button {
+.icon-text-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -411,8 +388,7 @@ pre {
 .primary-button:hover:not(:disabled),
 .secondary-button:hover,
 .icon-button:hover,
-.icon-text-button:hover,
-.payment-button:hover {
+.icon-text-button:hover {
   transform: translateY(-1px);
 }
 
@@ -445,21 +421,6 @@ pre {
 
 .icon-button.danger {
   color: #b42318;
-}
-
-.payment-button {
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 14px;
-  border: 1px solid var(--brand-purple);
-  background: var(--brand-purple);
-  color: #ffffff;
-}
-
-.payment-missing {
-  color: #9a3412;
-  font-size: 0.9rem;
-  font-weight: 800;
 }
 
 .alert {
@@ -681,32 +642,6 @@ pre {
   grid-column: 1 / -1;
 }
 
-.segmented-control {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  padding: 4px;
-  border: 1px solid var(--brand-border);
-  border-radius: 8px;
-  background: #f6e9f8;
-}
-
-.segmented-control button {
-  min-height: 38px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--brand-muted);
-  font-size: 0.84rem;
-  font-weight: 850;
-}
-
-.segmented-control button.active {
-  background: var(--brand-surface);
-  color: var(--brand-magenta);
-  box-shadow: 0 2px 8px rgba(92, 50, 118, 0.14);
-}
-
 .list-panel {
   min-width: 0;
 }
@@ -813,59 +748,6 @@ pre {
   font-size: 1.1rem;
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 900;
-}
-
-.status-a-payer {
-  background: #fff0fa;
-  color: #a0137e;
-}
-
-.status-paye {
-  background: #f2edff;
-  color: #4b318f;
-}
-
-.payment-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: #f8edf9;
-  color: #4c3a57;
-  font-size: 0.76rem;
-  font-weight: 900;
-}
-
-.payment-paid {
-  background: #f2edff;
-  color: #4b318f;
-}
-
-.payment-open,
-.payment-pending,
-.payment-authorized {
-  background: #fff0fa;
-  color: #a0137e;
-}
-
-.payment-failed,
-.payment-canceled,
-.payment-expired,
-.payment-setup_failed,
-.payment-missing_checkout_url {
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
 .reservation-meta {
   display: flex;
   align-items: center;
@@ -887,9 +769,10 @@ pre {
 
 .reservation-actions {
   display: grid;
-  grid-template-columns: 158px 40px 40px;
+  grid-template-columns: 40px 40px;
   gap: 8px;
   align-items: center;
+  justify-content: end;
 }
 
 .empty-state {
@@ -990,17 +873,12 @@ pre {
   }
 
   .reservation-actions {
-    grid-template-columns: 1fr 40px 40px;
+    grid-template-columns: 40px 40px;
     width: 100%;
   }
 
   .success-panel {
     grid-template-columns: 28px minmax(0, 1fr);
-  }
-
-  .payment-button,
-  .payment-missing {
-    grid-column: 1 / -1;
   }
 }
 

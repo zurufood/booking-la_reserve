@@ -61,11 +61,3 @@ export function formatLongDate(date) {
     year: 'numeric',
   }).format(new Date(`${date}T12:00:00`));
 }
-
-export function formatMoney(amount) {
-  return new Intl.NumberFormat('fr-FR', {
-    style: 'currency',
-    currency: 'EUR',
-    maximumFractionDigits: 0,
-  }).format(amount);
-}

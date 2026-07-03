@@ -1,5 +1,1 @@
-[functions.create-reservation-payment]
-verify_jwt = true
-
-[functions.mollie-webhook]
-verify_jwt = false
+# No Edge Functions are required on the no-payment branch.

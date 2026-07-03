@@ -1,33 +1,6 @@
 import { NEXT_SERVICE_DATE } from './dates';
 import { supabase } from './supabase';
 
-export const depositOptions = [
-  { value: 'a-payer', label: 'Paiement à recevoir' },
-  { value: 'paye', label: 'Paiement reçu' },
-];
-
-const paymentStatusLabels = {
-  manual: 'Manuel',
-  open: 'Paiement ouvert',
-  paid: 'Payé',
-  failed: 'Échoué',
-  canceled: 'Annulé',
-  expired: 'Expiré',
-  pending: 'En attente',
-  authorized: 'Autorisé',
-  setup_failed: 'Création échouée',
-  missing_checkout_url: 'Lien manquant',
-};
-
-export function getDepositLabel(status) {
-  return depositOptions.find((option) => option.value === status)?.label ?? status;
-}
-
-export function getPaymentStatusLabel(status) {
-  if (!status) return 'Non créé';
-  return paymentStatusLabels[status] ?? status;
-}
-
 export function mapReservation(row) {
   return {
     id: row.id,
@@ -39,17 +12,6 @@ export function mapReservation(row) {
     email: row.email,
     phone: row.phone,
     seats: Number(row.seats),
-    depositPerSeat: Number(row.deposit_per_seat),
-    depositStatus: row.deposit_status,
-    molliePaymentId: row.mollie_payment_id,
-    mollieCheckoutUrl: row.mollie_checkout_url,
-    paymentStatus: row.payment_status,
-    paymentAmountCents:
-      row.payment_amount_cents === null || row.payment_amount_cents === undefined
-        ? null
-        : Number(row.payment_amount_cents),
-    paymentCreatedAt: row.payment_created_at,
-    paymentPaidAt: row.payment_paid_at,
   };
 }
 
@@ -62,8 +24,6 @@ function toReservationRow(values) {
   if ('email' in values) row.email = values.email.trim().toLowerCase();
   if ('phone' in values) row.phone = values.phone.trim();
   if ('seats' in values) row.seats = Number(values.seats);
-  if ('depositPerSeat' in values) row.deposit_per_seat = Number(values.depositPerSeat);
-  if ('depositStatus' in values) row.deposit_status = values.depositStatus;
 
   return row;
 }
@@ -72,29 +32,6 @@ function throwIfError(error) {
   if (error) {
     throw new Error(error.message || 'Une erreur est survenue.');
   }
-}
-
-async function getFunctionErrorMessage(error) {
-  const response = error?.context;
-
-  if (response && typeof response.clone === 'function') {
-    try {
-      const body = await response.clone().json();
-      if (body?.error) return body.error;
-      if (body?.message) return body.message;
-    } catch {
-      // Fall through to text/error message handling.
-    }
-
-    try {
-      const text = await response.clone().text();
-      if (text) return text;
-    } catch {
-      // Fall through to the generic error message.
-    }
-  }
-
-  return error?.message || 'Paiement impossible.';
 }
 
 export async function fetchPublicAvailability() {
@@ -113,32 +50,33 @@ export async function fetchPublicAvailability() {
 }
 
 export async function createPublicReservation({ firstName, lastName, email, phone, seats }) {
-  const { data, error } = await supabase.functions.invoke('create-reservation-payment', {
-    body: {
-      date: NEXT_SERVICE_DATE,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim().toLowerCase(),
-      phone: phone.trim(),
-      seats: Number(seats),
-    },
+  const { data, error } = await supabase.rpc('create_public_reservation', {
+    p_service_date: NEXT_SERVICE_DATE,
+    p_first_name: firstName.trim(),
+    p_last_name: lastName.trim(),
+    p_email: email.trim().toLowerCase(),
+    p_phone: phone.trim(),
+    p_seats: Number(seats),
   });
 
-  if (error) {
-    throw new Error(await getFunctionErrorMessage(error));
-  }
+  throwIfError(error);
 
-  if (data?.error) {
-    throw new Error(data.error);
-  }
+  const reservation = Array.isArray(data) ? data[0] : data;
 
-  return data || null;
+  return reservation
+    ? {
+        id: reservation.id,
+        serviceDate: reservation.service_date,
+        seats: Number(reservation.seats),
+        remainingSeats: Number(reservation.remaining_seats),
+      }
+    : null;
 }
 
 export async function fetchReservations() {
   const { data, error } = await supabase
     .from('reservations')
-    .select('*')
+    .select('id, created_at, updated_at, service_date, first_name, last_name, email, phone, seats')
     .order('service_date', { ascending: true })
     .order('created_at', { ascending: true });
 
@@ -151,7 +89,7 @@ export async function createAdminReservation(values) {
   const { data, error } = await supabase
     .from('reservations')
     .insert(toReservationRow(values))
-    .select('*')
+    .select('id, created_at, updated_at, service_date, first_name, last_name, email, phone, seats')
     .single();
 
   throwIfError(error);
@@ -164,7 +102,7 @@ export async function updateAdminReservation(id, values) {
     .from('reservations')
     .update(toReservationRow(values))
     .eq('id', id)
-    .select('*')
+    .select('id, created_at, updated_at, service_date, first_name, last_name, email, phone, seats')
     .single();
 
   throwIfError(error);

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
-  CreditCard,
   Edit3,
   LogIn,
   LogOut,
@@ -17,12 +16,11 @@ import {
   UsersRound,
   XCircle,
 } from 'lucide-react';
-import { MAX_SEATS, DEPOSIT_PER_SEAT } from './lib/config';
+import { MAX_SEATS } from './lib/config';
 import {
   NEXT_SERVICE_DATE,
   formatDate,
   formatLongDate,
-  formatMoney,
   getThursdayOptions,
   isThursday,
 } from './lib/dates';
@@ -30,11 +28,8 @@ import {
   createAdminReservation,
   createPublicReservation,
   deleteAdminReservation,
-  depositOptions,
   fetchPublicAvailability,
   fetchReservations,
-  getDepositLabel,
-  getPaymentStatusLabel,
   updateAdminReservation,
 } from './lib/reservations';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
@@ -49,8 +44,6 @@ const emptyAdminForm = {
   email: '',
   phone: '',
   seats: 2,
-  depositPerSeat: DEPOSIT_PER_SEAT,
-  depositStatus: 'a-payer',
 };
 
 function getRoute() {
@@ -83,8 +76,7 @@ function ConfigNotice({ mode }) {
           <code> supabase/schema.sql</code> dans ton projet Supabase.
         </p>
         <pre>{`VITE_SUPABASE_URL=...
-VITE_SUPABASE_ANON_KEY=...
-VITE_DEPOSIT_PER_SEAT=30`}</pre>
+VITE_SUPABASE_ANON_KEY=...`}</pre>
         <span>{mode === 'admin' ? 'Le dashboard sera disponible après connexion admin.' : 'La page publique sera active après connexion à la base.'}</span>
       </section>
     </main>
@@ -99,9 +91,6 @@ function SignupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [receipt, setReceipt] = useState(null);
-  const [returnNotice, setReturnNotice] = useState(() => {
-    return new URLSearchParams(window.location.search).get('payment') === 'return';
-  });
 
   async function loadAvailability() {
     setLoading(true);
@@ -126,12 +115,10 @@ function SignupPage() {
   const selectedAvailability = availability.find((item) => item.date === NEXT_SERVICE_DATE);
   const remainingSeats = selectedAvailability?.remainingSeats ?? 0;
   const requestedSeats = Number(form.seats) || 0;
-  const paymentTotal = requestedSeats * DEPOSIT_PER_SEAT;
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
     setReceipt(null);
-    setReturnNotice(false);
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
   }
 
@@ -183,7 +170,7 @@ function SignupPage() {
     setErrors({});
 
     try {
-      const payment = await createPublicReservation({
+      const reservation = await createPublicReservation({
         firstName: form.firstName,
         lastName: form.lastName,
         email: form.email,
@@ -191,14 +178,8 @@ function SignupPage() {
         seats: requestedSeats,
       });
 
-      if (!payment?.checkoutUrl) {
-        setReceipt(payment);
-        await loadAvailability();
-        setErrors({ form: 'Inscription enregistrée, mais le lien Mollie est indisponible.' });
-        return;
-      }
-
-      window.location.assign(payment.checkoutUrl);
+      setReceipt(reservation);
+      await loadAvailability();
     } catch (error) {
       setErrors({ form: error.message });
     } finally {
@@ -256,12 +237,6 @@ function SignupPage() {
               <h2 id="signup-title">Vos informations</h2>
             </div>
           </div>
-
-          {returnNotice && (
-            <div className="alert info-alert">
-              Paiement reçu. Merci pour votre confiance !
-            </div>
-          )}
 
           {loadError && (
             <div className="alert error-alert">
@@ -353,17 +328,11 @@ function SignupPage() {
               {errors.seats && <small>{errors.seats}</small>}
             </label>
 
-            <div className="deposit-summary">
-              <CreditCard size={18} aria-hidden="true" />
-              <span>Paiement total</span>
-              <strong>{formatMoney(paymentTotal)}</strong>
-            </div>
-
             {errors.form && <div className="alert error-alert field-full">{errors.form}</div>}
 
             <button className="primary-button field-full" type="submit" disabled={submitting || loading}>
               <CheckCircle2 size={18} />
-              <span>{submitting ? 'Préparation du paiement...' : 'Valider et payer'}</span>
+              <span>{submitting ? 'Enregistrement...' : "Valider l'inscription"}</span>
             </button>
           </form>
 
@@ -377,7 +346,6 @@ function SignupPage() {
                   {formatLongDate(receipt.serviceDate)}.
                 </span>
               </div>
-              <span className="payment-missing">Lien Mollie indisponible.</span>
             </div>
           )}
         </section>
@@ -484,7 +452,6 @@ function AdminDashboard({ userEmail }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [paymentFilter, setPaymentFilter] = useState('tous');
   const [dateFilter, setDateFilter] = useState(NEXT_SERVICE_DATE);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyAdminForm);
@@ -517,10 +484,7 @@ function AdminDashboard({ userEmail }) {
   function getBookedSeats(date, exceptId = null) {
     return reservations
       .filter(
-        (reservation) =>
-          reservation.date === date &&
-          reservation.id !== exceptId &&
-          reservation.depositStatus === 'paye',
+        (reservation) => reservation.date === date && reservation.id !== exceptId,
       )
       .reduce((total, reservation) => total + Number(reservation.seats), 0);
   }
@@ -540,28 +504,24 @@ function AdminDashboard({ userEmail }) {
             .join(' ')
             .toLocaleLowerCase('fr-FR')
             .includes(normalizedQuery);
-        const matchesPayment = paymentFilter === 'tous' || reservation.depositStatus === paymentFilter;
         const matchesDate = !dateFilter || reservation.date === dateFilter;
 
-        return matchesQuery && matchesPayment && matchesDate;
+        return matchesQuery && matchesDate;
       })
       .sort((a, b) => `${a.date}-${a.createdAt}`.localeCompare(`${b.date}-${b.createdAt}`));
-  }, [dateFilter, paymentFilter, query, reservations]);
+  }, [dateFilter, query, reservations]);
 
   const stats = useMemo(() => {
     const visibleReservations = reservations.filter((reservation) => reservation.date === dateFilter);
-    const paidReservations = visibleReservations.filter(
-      (reservation) => reservation.depositStatus === 'paye',
+    const bookedSeats = visibleReservations.reduce(
+      (total, reservation) => total + reservation.seats,
+      0,
     );
 
     return {
       reservationCount: visibleReservations.length,
-      bookedSeats: paidReservations.reduce((total, reservation) => total + reservation.seats, 0),
-      paidSeats: paidReservations.reduce((total, reservation) => total + reservation.seats, 0),
-      paidPayments: paidReservations.reduce(
-        (total, reservation) => total + reservation.seats * reservation.depositPerSeat,
-        0,
-      ),
+      bookedSeats,
+      remainingSeats: Math.max(0, MAX_SEATS - bookedSeats),
     };
   }, [dateFilter, reservations]);
 
@@ -579,7 +539,6 @@ function AdminDashboard({ userEmail }) {
   function validateAdminForm() {
     const nextErrors = {};
     const seats = Number(form.seats);
-    const depositPerSeat = Number(form.depositPerSeat);
 
     if (!form.date || !isThursday(form.date)) {
       nextErrors.date = 'Choisis un jeudi';
@@ -603,14 +562,10 @@ function AdminDashboard({ userEmail }) {
 
     if (!seats || seats < 1) {
       nextErrors.seats = 'Nombre invalide';
-    } else if (form.depositStatus === 'paye' && seats > availableSeatsForForm) {
+    } else if (seats > availableSeatsForForm) {
       nextErrors.seats = `Il reste ${availableSeatsForForm} place${
         availableSeatsForForm > 1 ? 's' : ''
       }`;
-    }
-
-    if (Number.isNaN(depositPerSeat) || depositPerSeat < 0) {
-      nextErrors.depositPerSeat = 'Montant invalide';
     }
 
     setFormErrors(nextErrors);
@@ -634,8 +589,6 @@ function AdminDashboard({ userEmail }) {
       email: form.email,
       phone: form.phone,
       seats: Number(form.seats),
-      depositPerSeat: Number(form.depositPerSeat),
-      depositStatus: form.depositStatus,
     };
 
     try {
@@ -669,22 +622,9 @@ function AdminDashboard({ userEmail }) {
       email: reservation.email,
       phone: reservation.phone,
       seats: reservation.seats,
-      depositPerSeat: reservation.depositPerSeat,
-      depositStatus: reservation.depositStatus,
     });
     setFormErrors({});
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
-  async function updateDepositStatus(id, depositStatus) {
-    try {
-      const updated = await updateAdminReservation(id, { depositStatus });
-      setReservations((current) =>
-        current.map((reservation) => (reservation.id === id ? updated : reservation)),
-      );
-    } catch (statusError) {
-      setError(statusError.message);
-    }
   }
 
   async function removeReservation(id) {
@@ -752,17 +692,10 @@ function AdminDashboard({ userEmail }) {
           </div>
         </article>
         <article className="metric metric-amber">
-          <CreditCard size={22} aria-hidden="true" />
-          <div>
-            <span>Paiements reçus</span>
-            <strong>{stats.paidSeats}</strong>
-          </div>
-        </article>
-        <article className="metric metric-ink">
           <CalendarDays size={22} aria-hidden="true" />
           <div>
-            <span>Montant reçu</span>
-            <strong>{formatMoney(stats.paidPayments)}</strong>
+            <span>Places restantes</span>
+            <strong>{stats.remainingSeats}</strong>
           </div>
         </article>
       </section>
@@ -866,35 +799,6 @@ function AdminDashboard({ userEmail }) {
               {formErrors.seats && <small>{formErrors.seats}</small>}
             </label>
 
-            <label className="field">
-              <span>Paiement par place</span>
-              <input
-                value={form.depositPerSeat}
-                onChange={(event) => updateForm('depositPerSeat', event.target.value)}
-                min="0"
-                step="1"
-                type="number"
-                aria-invalid={Boolean(formErrors.depositPerSeat)}
-              />
-              {formErrors.depositPerSeat && <small>{formErrors.depositPerSeat}</small>}
-            </label>
-
-            <label className="field field-full">
-              <span>Paiement</span>
-              <div className="segmented-control" role="group" aria-label="Paiement">
-                {depositOptions.map((option) => (
-                  <button
-                    className={form.depositStatus === option.value ? 'active' : ''}
-                    key={option.value}
-                    type="button"
-                    onClick={() => updateForm('depositStatus', option.value)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </label>
-
             {formErrors.form && <div className="alert error-alert field-full">{formErrors.form}</div>}
 
             <div className="form-actions">
@@ -940,17 +844,6 @@ function AdminDashboard({ userEmail }) {
                 ))}
               </select>
             </label>
-            <label className="field compact-field">
-              <span>Paiement</span>
-              <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>
-                <option value="tous">Tous</option>
-                {depositOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
           <div className="reservation-list">
@@ -964,7 +857,6 @@ function AdminDashboard({ userEmail }) {
               </div>
             ) : (
               filteredReservations.map((reservation) => {
-                const paymentTotal = reservation.seats * reservation.depositPerSeat;
                 const reservationName =
                   [reservation.firstName, reservation.lastName].filter(Boolean).join(' ') ||
                   reservation.email;
@@ -980,14 +872,6 @@ function AdminDashboard({ userEmail }) {
                     <div className="reservation-main">
                       <div className="reservation-title-row">
                         <h3>{reservationName}</h3>
-                        <span className={`status-pill status-${reservation.depositStatus}`}>
-                          {getDepositLabel(reservation.depositStatus)}
-                        </span>
-                        <span
-                          className={`payment-pill payment-${reservation.paymentStatus || 'manual'}`}
-                        >
-                          Mollie : {getPaymentStatusLabel(reservation.paymentStatus)}
-                        </span>
                       </div>
                       <div className="reservation-meta">
                         <a href={`mailto:${reservation.email}`}>
@@ -998,28 +882,10 @@ function AdminDashboard({ userEmail }) {
                           <Phone size={15} aria-hidden="true" />
                           {reservation.phone}
                         </a>
-                        <span>
-                          <CreditCard size={15} aria-hidden="true" />
-                          {formatMoney(paymentTotal)}
-                        </span>
-                        {reservation.molliePaymentId && (
-                          <span>Paiement {reservation.molliePaymentId}</span>
-                        )}
                       </div>
                     </div>
 
                     <div className="reservation-actions">
-                      <select
-                        aria-label={`Changer le paiement de ${reservation.email}`}
-                        value={reservation.depositStatus}
-                        onChange={(event) => updateDepositStatus(reservation.id, event.target.value)}
-                      >
-                        {depositOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
                       <button
                         className="icon-button"
                         type="button"
