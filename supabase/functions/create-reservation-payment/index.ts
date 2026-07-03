@@ -52,8 +52,8 @@ function normalizeBaseUrl(url: string) {
 }
 
 function getDepositPerSeat() {
-  const value = Number(Deno.env.get('DEPOSIT_PER_SEAT') ?? '10');
-  return Number.isFinite(value) && value >= 0 ? value : 10;
+  const value = Number(Deno.env.get('DEPOSIT_PER_SEAT') ?? '30');
+  return Number.isFinite(value) && value >= 0 ? value : 30;
 }
 
 Deno.serve(async (req) => {
@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
           currency: 'EUR',
           value: amountValue,
         },
-        description: `Acompte restaurant éphémère - ${reservation.seats} place${
+        description: `Paiement Zuru Zuru's Supper Club - ${reservation.seats} place${
           reservation.seats > 1 ? 's' : ''
         }`,
         redirectUrl,

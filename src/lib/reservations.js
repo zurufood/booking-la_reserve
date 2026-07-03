@@ -2,8 +2,8 @@ import { NEXT_SERVICE_DATE } from './dates';
 import { supabase } from './supabase';
 
 export const depositOptions = [
-  { value: 'a-payer', label: 'Acompte à payer' },
-  { value: 'paye', label: 'Acompte payé' },
+  { value: 'a-payer', label: 'Paiement à recevoir' },
+  { value: 'paye', label: 'Paiement reçu' },
 ];
 
 const paymentStatusLabels = {

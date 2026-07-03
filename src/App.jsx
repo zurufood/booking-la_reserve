@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
-  ChefHat,
   CreditCard,
   Edit3,
   LogIn,
@@ -16,7 +15,6 @@ import {
   ShieldCheck,
   Trash2,
   UsersRound,
-  UtensilsCrossed,
   XCircle,
 } from 'lucide-react';
 import { MAX_SEATS, DEPOSIT_PER_SEAT } from './lib/config';
@@ -71,25 +69,7 @@ function App() {
     return () => window.removeEventListener('popstate', syncRoute);
   }, []);
 
-  function navigate(event, path) {
-    event.preventDefault();
-    window.history.pushState({}, '', path);
-    setRoute(getRoute());
-  }
-
-  return (
-    <>
-      <nav className="route-nav" aria-label="Navigation">
-        <a className={route === 'signup' ? 'active' : ''} href="/inscription" onClick={(event) => navigate(event, '/inscription')}>
-          Inscription
-        </a>
-        <a className={route === 'admin' ? 'active' : ''} href="/admin" onClick={(event) => navigate(event, '/admin')}>
-          Admin
-        </a>
-      </nav>
-      {route === 'admin' ? <AdminPage /> : <SignupPage />}
-    </>
-  );
+  return route === 'admin' ? <AdminPage /> : <SignupPage />;
 }
 
 function ConfigNotice({ mode }) {
@@ -104,7 +84,7 @@ function ConfigNotice({ mode }) {
         </p>
         <pre>{`VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
-VITE_DEPOSIT_PER_SEAT=10`}</pre>
+VITE_DEPOSIT_PER_SEAT=30`}</pre>
         <span>{mode === 'admin' ? 'Le dashboard sera disponible après connexion admin.' : 'La page publique sera active après connexion à la base.'}</span>
       </section>
     </main>
@@ -146,7 +126,7 @@ function SignupPage() {
   const selectedAvailability = availability.find((item) => item.date === NEXT_SERVICE_DATE);
   const remainingSeats = selectedAvailability?.remainingSeats ?? 0;
   const requestedSeats = Number(form.seats) || 0;
-  const depositTotal = requestedSeats * DEPOSIT_PER_SEAT;
+  const paymentTotal = requestedSeats * DEPOSIT_PER_SEAT;
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -233,16 +213,13 @@ function SignupPage() {
   return (
     <main className="public-shell">
       <section className="public-header">
-        <div>
-          <p className="eyebrow">Restaurant éphémère</p>
-          <h1>Réserver une table</h1>
+        <div className="public-title-block">
+          <img className="zuru-logo" src="/logo-zuruzuru.svg" alt="Zuru Zuru Supper Club" />
+          <h1>Réservations</h1>
           <p className="lead">
-            Un jeudi par semaine, 24 places, un menu unique servi à Darwin, dans La Réserve.
+            Une table, des produits locaux, des ingrédients de saison, des vins choisis avec soin,
+            des conversations qui rapprochent.
           </p>
-        </div>
-        <div className="capacity-badge">
-          <UsersRound size={20} aria-hidden="true" />
-          <span>{remainingSeats} places restantes</span>
         </div>
       </section>
 
@@ -250,23 +227,26 @@ function SignupPage() {
         <section className="menu-panel" aria-labelledby="menu-title">
           <div className="panel-heading compact-heading">
             <div>
-              <p className="eyebrow">Menu</p>
-              <h2 id="menu-title">Menu du jeudi</h2>
+              <p className="eyebrow">Composition</p>
+              <h2 id="menu-title">
+                Menu de saison <span className="menu-price">30€</span>
+              </h2>
             </div>
-            <ChefHat size={28} aria-hidden="true" />
           </div>
-          <div className="menu-list">
+          <ul className="menu-list">
             {menuSections.map((section) => (
-              <article className="menu-section" key={section.title}>
-                <h3>{section.title}</h3>
-                <ul>
-                  {section.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </article>
+              <li className="menu-section" key={section.title}>
+                <span>{section.title}</span>
+                {section.items.length > 0 && (
+                  <ul>
+                    {section.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
 
         <section className="signup-panel" aria-labelledby="signup-title">
@@ -275,7 +255,6 @@ function SignupPage() {
               <p className="eyebrow">Inscription</p>
               <h2 id="signup-title">Vos informations</h2>
             </div>
-            <UtensilsCrossed size={28} aria-hidden="true" />
           </div>
 
           {returnNotice && (
@@ -296,7 +275,7 @@ function SignupPage() {
 
           <form className="signup-form" onSubmit={handleSubmit}>
             <div className="field field-full">
-              <span>Jeudi</span>
+              <span>Date</span>
               <div className="fixed-date-display" aria-invalid={Boolean(errors.date)}>
                 <CalendarDays size={20} aria-hidden="true" />
                 <div>
@@ -376,15 +355,15 @@ function SignupPage() {
 
             <div className="deposit-summary">
               <CreditCard size={18} aria-hidden="true" />
-              <span>Acompte total</span>
-              <strong>{formatMoney(depositTotal)}</strong>
+              <span>Paiement total</span>
+              <strong>{formatMoney(paymentTotal)}</strong>
             </div>
 
             {errors.form && <div className="alert error-alert field-full">{errors.form}</div>}
 
             <button className="primary-button field-full" type="submit" disabled={submitting || loading}>
               <CheckCircle2 size={18} />
-              <span>{submitting ? 'Préparation du paiement...' : 'Valider et payer l’acompte'}</span>
+              <span>{submitting ? 'Préparation du paiement...' : 'Valider et payer'}</span>
             </button>
           </form>
 
@@ -537,7 +516,12 @@ function AdminDashboard({ userEmail }) {
 
   function getBookedSeats(date, exceptId = null) {
     return reservations
-      .filter((reservation) => reservation.date === date && reservation.id !== exceptId)
+      .filter(
+        (reservation) =>
+          reservation.date === date &&
+          reservation.id !== exceptId &&
+          reservation.depositStatus === 'paye',
+      )
       .reduce((total, reservation) => total + Number(reservation.seats), 0);
   }
 
@@ -556,8 +540,7 @@ function AdminDashboard({ userEmail }) {
             .join(' ')
             .toLocaleLowerCase('fr-FR')
             .includes(normalizedQuery);
-        const matchesPayment =
-          paymentFilter === 'tous' || reservation.depositStatus === paymentFilter;
+        const matchesPayment = paymentFilter === 'tous' || reservation.depositStatus === paymentFilter;
         const matchesDate = !dateFilter || reservation.date === dateFilter;
 
         return matchesQuery && matchesPayment && matchesDate;
@@ -573,9 +556,9 @@ function AdminDashboard({ userEmail }) {
 
     return {
       reservationCount: visibleReservations.length,
-      bookedSeats: visibleReservations.reduce((total, reservation) => total + reservation.seats, 0),
+      bookedSeats: paidReservations.reduce((total, reservation) => total + reservation.seats, 0),
       paidSeats: paidReservations.reduce((total, reservation) => total + reservation.seats, 0),
-      paidDeposits: paidReservations.reduce(
+      paidPayments: paidReservations.reduce(
         (total, reservation) => total + reservation.seats * reservation.depositPerSeat,
         0,
       ),
@@ -620,7 +603,7 @@ function AdminDashboard({ userEmail }) {
 
     if (!seats || seats < 1) {
       nextErrors.seats = 'Nombre invalide';
-    } else if (seats > availableSeatsForForm) {
+    } else if (form.depositStatus === 'paye' && seats > availableSeatsForForm) {
       nextErrors.seats = `Il reste ${availableSeatsForForm} place${
         availableSeatsForForm > 1 ? 's' : ''
       }`;
@@ -732,6 +715,9 @@ function AdminDashboard({ userEmail }) {
           <h1>Inscriptions du jeudi</h1>
         </div>
         <div className="admin-actions">
+          <a className="secondary-button" href="/inscription">
+            Retour au site
+          </a>
           <span>{userEmail}</span>
           <button className="secondary-button" type="button" onClick={signOut}>
             <LogOut size={17} />
@@ -768,7 +754,7 @@ function AdminDashboard({ userEmail }) {
         <article className="metric metric-amber">
           <CreditCard size={22} aria-hidden="true" />
           <div>
-            <span>Acomptes payés</span>
+            <span>Paiements reçus</span>
             <strong>{stats.paidSeats}</strong>
           </div>
         </article>
@@ -776,7 +762,7 @@ function AdminDashboard({ userEmail }) {
           <CalendarDays size={22} aria-hidden="true" />
           <div>
             <span>Montant reçu</span>
-            <strong>{formatMoney(stats.paidDeposits)}</strong>
+            <strong>{formatMoney(stats.paidPayments)}</strong>
           </div>
         </article>
       </section>
@@ -809,7 +795,7 @@ function AdminDashboard({ userEmail }) {
 
           <form className="reservation-form" onSubmit={handleAdminSubmit}>
             <div className="field field-full">
-              <span>Jeudi</span>
+              <span>Date</span>
               <div className="fixed-date-display" aria-invalid={Boolean(formErrors.date)}>
                 <CalendarDays size={20} aria-hidden="true" />
                 <div>
@@ -881,7 +867,7 @@ function AdminDashboard({ userEmail }) {
             </label>
 
             <label className="field">
-              <span>Acompte par place</span>
+              <span>Paiement par place</span>
               <input
                 value={form.depositPerSeat}
                 onChange={(event) => updateForm('depositPerSeat', event.target.value)}
@@ -894,8 +880,8 @@ function AdminDashboard({ userEmail }) {
             </label>
 
             <label className="field field-full">
-              <span>Acompte</span>
-              <div className="segmented-control" role="group" aria-label="Acompte">
+              <span>Paiement</span>
+              <div className="segmented-control" role="group" aria-label="Paiement">
                 {depositOptions.map((option) => (
                   <button
                     className={form.depositStatus === option.value ? 'active' : ''}
@@ -955,7 +941,7 @@ function AdminDashboard({ userEmail }) {
               </select>
             </label>
             <label className="field compact-field">
-              <span>Acompte</span>
+              <span>Paiement</span>
               <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>
                 <option value="tous">Tous</option>
                 {depositOptions.map((option) => (
@@ -978,7 +964,7 @@ function AdminDashboard({ userEmail }) {
               </div>
             ) : (
               filteredReservations.map((reservation) => {
-                const depositTotal = reservation.seats * reservation.depositPerSeat;
+                const paymentTotal = reservation.seats * reservation.depositPerSeat;
                 const reservationName =
                   [reservation.firstName, reservation.lastName].filter(Boolean).join(' ') ||
                   reservation.email;
@@ -1014,7 +1000,7 @@ function AdminDashboard({ userEmail }) {
                         </a>
                         <span>
                           <CreditCard size={15} aria-hidden="true" />
-                          {formatMoney(depositTotal)}
+                          {formatMoney(paymentTotal)}
                         </span>
                         {reservation.molliePaymentId && (
                           <span>Paiement {reservation.molliePaymentId}</span>
@@ -1024,7 +1010,7 @@ function AdminDashboard({ userEmail }) {
 
                     <div className="reservation-actions">
                       <select
-                        aria-label={`Changer l'acompte de ${reservation.email}`}
+                        aria-label={`Changer le paiement de ${reservation.email}`}
                         value={reservation.depositStatus}
                         onChange={(event) => updateDepositStatus(reservation.id, event.target.value)}
                       >

@@ -1,18 +1,18 @@
 export const menuSections = [
   {
-    title: 'Amuse-bouche',
-    items: ['Amuse-bouche de saison', 'Bouchée signature'],
+    title: '2x Amuse-bouche',
+    items: [],
   },
   {
-    title: 'Entrées',
-    items: ['Entrée végétale', 'Entrée iodée'],
+    title: '2x Entrées',
+    items: [],
   },
   {
-    title: 'Plat',
-    items: ['Plat principal du jeudi'],
+    title: '1 Plat',
+    items: [],
   },
   {
-    title: 'Dessert',
-    items: ['Dessert de saison'],
+    title: '1 Dessert',
+    items: [],
   },
 ];

@@ -1,8 +1,5 @@
 alter table public.reservations
-  add column if not exists first_name text not null default '',
-  add column if not exists last_name text not null default '';
-
-drop function if exists public.create_public_reservation(date, text, text, integer, integer);
+  alter column deposit_per_seat set default 30;
 
 create or replace function public.create_public_reservation(
   p_service_date date,
@@ -106,7 +103,3 @@ begin
     24 - (booked_seats + p_seats);
 end;
 $$;
-
-revoke execute on function public.create_public_reservation(date, text, text, text, text, integer, integer) from public;
-revoke execute on function public.create_public_reservation(date, text, text, text, text, integer, integer) from anon, authenticated;
-grant execute on function public.create_public_reservation(date, text, text, text, text, integer, integer) to service_role;

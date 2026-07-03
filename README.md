@@ -1,9 +1,9 @@
 ﻿# Booking La Reserve
 
-Application React/Vite pour gerer les inscriptions d'un restaurant ephemere :
+Application React/Vite pour gerer les inscriptions du Zuru Zuru's Supper Club :
 
-- `/inscription` : page publique avec reservation et paiement d'acompte Mollie.
-- `/admin` : dashboard Supabase Auth pour suivre les inscriptions et acomptes.
+- `/inscription` : page publique avec reservation et paiement Mollie.
+- `/admin` : dashboard Supabase Auth pour suivre les inscriptions et paiements.
 
 ## Variables frontend
 
@@ -12,7 +12,7 @@ Creer un fichier `.env` local avec :
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-public-anon-key
-VITE_DEPOSIT_PER_SEAT=10
+VITE_DEPOSIT_PER_SEAT=30
 ```
 
 ## Supabase
@@ -29,7 +29,7 @@ Les cles Mollie ne doivent jamais etre dans React ou Git. Les ajouter comme secr
 supabase secrets set MOLLIE_API_KEY=your_mollie_api_key
 supabase secrets set PUBLIC_SITE_URL=https://votre-site.example
 supabase secrets set MOLLIE_WEBHOOK_URL=https://PROJECT_REF.functions.supabase.co/mollie-webhook
-supabase secrets set DEPOSIT_PER_SEAT=10
+supabase secrets set DEPOSIT_PER_SEAT=30
 ```
 
 ## Emails de confirmation

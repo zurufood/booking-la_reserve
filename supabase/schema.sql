@@ -15,7 +15,7 @@ create table if not exists public.reservations (
   email text not null,
   phone text not null,
   seats integer not null check (seats between 1 and 24),
-  deposit_per_seat integer not null default 10 check (deposit_per_seat >= 0),
+  deposit_per_seat integer not null default 30 check (deposit_per_seat >= 0),
   deposit_status text not null default 'a-payer' check (deposit_status in ('a-payer', 'paye')),
   mollie_payment_id text unique,
   mollie_checkout_url text,
@@ -91,9 +91,10 @@ begin
   into booked_seats
   from public.reservations
   where service_date = new.service_date
-    and id <> new.id;
+    and id <> new.id
+    and deposit_status = 'paye';
 
-  if booked_seats + new.seats > 24 then
+  if new.deposit_status = 'paye' and booked_seats + new.seats > 24 then
     raise exception 'Il ne reste pas assez de places pour ce jeudi.';
   end if;
 
@@ -103,7 +104,7 @@ $$;
 
 drop trigger if exists reservations_enforce_capacity on public.reservations;
 create trigger reservations_enforce_capacity
-before insert or update of service_date, seats on public.reservations
+before insert or update of service_date, seats, deposit_status on public.reservations
 for each row
 execute function public.enforce_reservation_capacity();
 
@@ -131,6 +132,7 @@ as $$
   booked as (
     select reservations.service_date, coalesce(sum(reservations.seats), 0)::integer as booked_seats
     from public.reservations
+    where reservations.deposit_status = 'paye'
     group by reservations.service_date
   )
   select
@@ -151,7 +153,7 @@ create or replace function public.create_public_reservation(
   p_email text,
   p_phone text,
   p_seats integer,
-  p_deposit_per_seat integer default 10
+  p_deposit_per_seat integer default 30
 )
 returns table (
   id uuid,
@@ -199,7 +201,7 @@ begin
   end if;
 
   if p_deposit_per_seat is null or p_deposit_per_seat < 0 then
-    raise exception 'Montant d''acompte invalide.';
+    raise exception 'Montant de paiement invalide.';
   end if;
 
   perform pg_advisory_xact_lock(hashtext(p_service_date::text));
@@ -207,7 +209,8 @@ begin
   select coalesce(sum(public.reservations.seats), 0)
   into booked_seats
   from public.reservations
-  where public.reservations.service_date = p_service_date;
+  where public.reservations.service_date = p_service_date
+    and public.reservations.deposit_status = 'paye';
 
   if booked_seats + p_seats > 24 then
     raise exception 'Il ne reste pas assez de places pour ce jeudi.';
@@ -243,7 +246,7 @@ begin
     p_deposit_per_seat,
     p_seats * p_deposit_per_seat,
     'a-payer'::text,
-    24 - (booked_seats + p_seats);
+    24 - booked_seats;
 end;
 $$;
 

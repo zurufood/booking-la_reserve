@@ -4,20 +4,20 @@ const EVENT_ADDRESS = 'La Réserve - Darwin, 87 Quai des Queyries, 33100 Bordeau
 
 const menuSections = [
   {
-    title: 'Amuse-bouche',
-    items: ['Amuse-bouche de saison', 'Bouchée signature'],
+    title: '2x Amuse-bouche',
+    items: [],
   },
   {
-    title: 'Entrées',
-    items: ['Entrée végétale', 'Entrée iodée'],
+    title: '2x Entrées',
+    items: [],
   },
   {
-    title: 'Plat',
-    items: ['Plat principal du jeudi'],
+    title: '1 Plat',
+    items: [],
   },
   {
-    title: 'Dessert',
-    items: ['Dessert de saison'],
+    title: '1 Dessert',
+    items: [],
   },
 ];
 
@@ -48,11 +48,11 @@ function formatMoney(amount: number) {
 }
 
 function buildTextEmail(reservation: ReservationConfirmation) {
-  const depositTotal = reservation.seats * reservation.depositPerSeat;
+  const paymentTotal = reservation.seats * reservation.depositPerSeat;
   const menu = menuSections
     .map((section) => {
       const items = section.items.map((item) => `- ${item}`).join('\n');
-      return `${section.title}\n${items}`;
+      return items ? `${section.title}\n${items}` : section.title;
     })
     .join('\n\n');
 
@@ -62,7 +62,7 @@ function buildTextEmail(reservation: ReservationConfirmation) {
     'Récapitulatif',
     `Nom : ${reservation.firstName} ${reservation.lastName}`.trim(),
     `Places : ${reservation.seats}`,
-    `Acompte réglé : ${formatMoney(depositTotal)}`,
+    `Paiement réglé : ${formatMoney(paymentTotal)}`,
     `Date et horaire : ${EVENT_DATETIME}`,
     `Adresse : ${EVENT_ADDRESS}`,
     `Telephone : ${reservation.phone}`,
@@ -76,15 +76,19 @@ function buildTextEmail(reservation: ReservationConfirmation) {
 }
 
 function buildHtmlEmail(reservation: ReservationConfirmation) {
-  const depositTotal = reservation.seats * reservation.depositPerSeat;
+  const paymentTotal = reservation.seats * reservation.depositPerSeat;
   const menuHtml = menuSections
     .map(
       (section) => `
         <section style="margin:0 0 18px;">
           <h3 style="margin:0 0 8px;color:#17202a;font-size:16px;">${escapeHtml(section.title)}</h3>
-          <ul style="margin:0;padding-left:20px;color:#465163;">
-            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
-          </ul>
+          ${
+            section.items.length > 0
+              ? `<ul style="margin:0;padding-left:20px;color:#465163;">${section.items
+                  .map((item) => `<li>${escapeHtml(item)}</li>`)
+                  .join('')}</ul>`
+              : ''
+          }
         </section>
       `,
     )
@@ -103,7 +107,7 @@ function buildHtmlEmail(reservation: ReservationConfirmation) {
             <div style="margin:0 0 24px;padding:16px;border:1px solid #d7dee8;border-radius:8px;background:#f8fafc;">
               <p style="margin:0 0 8px;"><strong>Places :</strong> ${reservation.seats}</p>
               <p style="margin:0 0 8px;"><strong>Nom :</strong> ${escapeHtml(`${reservation.firstName} ${reservation.lastName}`.trim())}</p>
-              <p style="margin:0 0 8px;"><strong>Acompte réglé :</strong> ${formatMoney(depositTotal)}</p>
+              <p style="margin:0 0 8px;"><strong>Paiement réglé :</strong> ${formatMoney(paymentTotal)}</p>
               <p style="margin:0 0 8px;"><strong>Date et horaire :</strong> ${EVENT_DATETIME}</p>
               <p style="margin:0 0 8px;"><strong>Adresse :</strong> ${EVENT_ADDRESS}</p>
               <p style="margin:0;"><strong>Telephone :</strong> ${escapeHtml(reservation.phone)}</p>

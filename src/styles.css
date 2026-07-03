@@ -1,6 +1,16 @@
 :root {
-  color: #17202a;
-  background: #f4f5f3;
+  --brand-magenta: #d817a8;
+  --brand-purple: #6556b6;
+  --brand-ink: #18111f;
+  --brand-muted: #62576b;
+  --brand-soft: #fbf3fb;
+  --brand-surface: #ffffff;
+  --brand-panel: #fffafd;
+  --brand-border: #ead7ec;
+  --brand-border-strong: #d9bddf;
+
+  color: var(--brand-ink);
+  background: var(--brand-soft);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -16,7 +26,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f4f5f3;
+  background: var(--brand-soft);
 }
 
 button,
@@ -46,35 +56,6 @@ pre {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
-.route-nav {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 10px 18px;
-  border-bottom: 1px solid #dfe4dc;
-  background: rgba(244, 245, 243, 0.94);
-  backdrop-filter: blur(12px);
-}
-
-.route-nav a {
-  min-height: 34px;
-  padding: 7px 11px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: #53606d;
-  font-size: 0.88rem;
-  font-weight: 800;
-}
-
-.route-nav a.active {
-  border-color: #cfd8d0;
-  background: #ffffff;
-  color: #18212f;
-}
-
 .public-shell,
 .app-shell {
   width: min(1440px, 100%);
@@ -95,6 +76,12 @@ pre {
   margin-bottom: 18px;
 }
 
+.public-header {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 .public-header h1,
 .topbar h1,
 .panel h2,
@@ -109,28 +96,47 @@ pre {
 
 .public-header h1,
 .topbar h1 {
-  color: #111827;
+  color: var(--brand-ink);
   font-size: clamp(2rem, 5vw, 3.3rem);
   line-height: 1.02;
+}
+
+.public-header h1 {
+  font-size: clamp(1.35rem, 3.2vw, 2.05rem);
+}
+
+.public-title-block {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
 }
 
 .lead {
   max-width: 620px;
   margin: 12px 0 0;
-  color: #4f5b68;
+  color: var(--brand-muted);
   font-size: 1rem;
+}
+
+.zuru-logo {
+  display: block;
+  width: 118px;
+  flex: 0 0 auto;
+  height: auto;
+  margin-bottom: 24px;
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #697260;
+  color: var(--brand-magenta);
   font-size: 0.78rem;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.capacity-badge,
 .topbar-date,
 .admin-actions {
   display: inline-flex;
@@ -138,10 +144,10 @@ pre {
   gap: 10px;
   min-height: 44px;
   padding: 10px 14px;
-  border: 1px solid #d9ded4;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #273142;
+  background: var(--brand-surface);
+  color: var(--brand-ink);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -154,7 +160,7 @@ pre {
 .admin-actions span {
   max-width: 240px;
   overflow: hidden;
-  color: #4f5b68;
+  color: var(--brand-muted);
   font-size: 0.88rem;
   text-overflow: ellipsis;
 }
@@ -172,10 +178,10 @@ pre {
 .setup-panel,
 .login-panel,
 .loading-panel {
-  border: 1px solid #dce2da;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 16px 36px rgba(21, 34, 28, 0.08);
+  background: var(--brand-surface);
+  box-shadow: 0 16px 36px rgba(92, 50, 118, 0.1);
 }
 
 .menu-panel,
@@ -193,37 +199,45 @@ pre {
 
 .compact-heading {
   padding-bottom: 18px;
-  border-bottom: 1px solid #edf0ea;
+  border-bottom: 1px solid var(--brand-border);
 }
 
 .panel h2,
 .menu-panel h2,
 .signup-panel h2 {
-  color: #151b28;
+  color: var(--brand-ink);
   font-size: 1.25rem;
   line-height: 1.2;
 }
 
+.menu-price {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid var(--brand-border-strong);
+  border-radius: 999px;
+  background: #fff0fa;
+  color: var(--brand-magenta);
+  font-size: 0.78rem;
+  font-weight: 800;
+  vertical-align: middle;
+}
+
 .menu-list {
   display: grid;
-  gap: 0;
+  gap: 10px;
+  margin: 0;
+  padding: 18px 20px 20px;
+  list-style: none;
 }
 
 .menu-section {
-  display: grid;
-  gap: 8px;
-  padding: 18px 20px;
-  border-bottom: 1px solid #edf0ea;
-}
-
-.menu-section:last-child {
-  border-bottom: 0;
-}
-
-.menu-section h3 {
-  margin: 0;
-  color: #2a332c;
+  position: relative;
+  padding-left: 18px;
+  color: #372045;
   font-size: 0.95rem;
+  font-weight: 850;
 }
 
 .menu-section ul {
@@ -231,8 +245,15 @@ pre {
   gap: 5px;
   margin: 0;
   padding: 0;
-  color: #56635a;
+  color: var(--brand-muted);
   list-style: none;
+}
+
+.menu-section::before {
+  position: absolute;
+  left: 0;
+  color: var(--brand-magenta);
+  content: "•";
 }
 
 .menu-section li {
@@ -243,7 +264,7 @@ pre {
 .menu-section li::before {
   position: absolute;
   left: 0;
-  color: #0f766e;
+  color: var(--brand-magenta);
   content: "•";
 }
 
@@ -266,7 +287,7 @@ pre {
 
 .field span,
 .compact-field span {
-  color: #465163;
+  color: var(--brand-muted);
   font-size: 0.83rem;
   font-weight: 800;
 }
@@ -276,10 +297,10 @@ pre {
 .search-field input,
 .reservation-actions select {
   width: 100%;
-  border: 1px solid #cdd5df;
+  border: 1px solid #d9c8df;
   border-radius: 7px;
-  background: #ffffff;
-  color: #121826;
+  background: var(--brand-surface);
+  color: var(--brand-ink);
   outline: none;
   transition:
     border-color 160ms ease,
@@ -300,10 +321,10 @@ pre {
   gap: 12px;
   min-height: 52px;
   padding: 10px 12px;
-  border: 1px solid #cdd5df;
+  border: 1px solid #d9c8df;
   border-radius: 7px;
-  background: #f8fafc;
-  color: #121826;
+  background: #fff7fd;
+  color: var(--brand-ink);
 }
 
 .fixed-date-display[aria-invalid="true"] {
@@ -312,7 +333,7 @@ pre {
 
 .fixed-date-display svg {
   flex: 0 0 auto;
-  color: #0f766e;
+  color: var(--brand-purple);
 }
 
 .fixed-date-display div {
@@ -323,12 +344,12 @@ pre {
 
 .fixed-date-display strong {
   overflow-wrap: anywhere;
-  color: #111827;
+  color: var(--brand-ink);
   line-height: 1.2;
 }
 
 .fixed-date-display small {
-  color: #526070;
+  color: var(--brand-muted);
   font-size: 0.82rem;
   font-weight: 800;
 }
@@ -337,8 +358,8 @@ pre {
 .field select:focus,
 .search-field input:focus,
 .reservation-actions select:focus {
-  border-color: #0f766e;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+  border-color: var(--brand-magenta);
+  box-shadow: 0 0 0 3px rgba(216, 23, 168, 0.16);
 }
 
 .field input[aria-invalid="true"],
@@ -358,16 +379,16 @@ pre {
   gap: 10px;
   min-height: 42px;
   padding: 10px 12px;
-  border: 1px solid #d7dee8;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #465163;
+  background: #fff7fd;
+  color: var(--brand-muted);
   font-weight: 800;
 }
 
 .deposit-summary strong {
   margin-left: auto;
-  color: #111827;
+  color: var(--brand-ink);
   font-size: 1.08rem;
 }
 
@@ -399,8 +420,8 @@ pre {
   gap: 8px;
   min-height: 42px;
   padding: 0 16px;
-  border: 1px solid #0f766e;
-  background: #0f766e;
+  border: 1px solid var(--brand-magenta);
+  background: var(--brand-magenta);
   color: #ffffff;
 }
 
@@ -409,17 +430,17 @@ pre {
   gap: 8px;
   min-height: 40px;
   padding: 0 13px;
-  border: 1px solid #c7d0dd;
-  background: #ffffff;
-  color: #273142;
+  border: 1px solid var(--brand-border-strong);
+  background: var(--brand-surface);
+  color: var(--brand-ink);
 }
 
 .icon-button {
   width: 40px;
   height: 40px;
-  border: 1px solid #c7d0dd;
-  background: #ffffff;
-  color: #273142;
+  border: 1px solid var(--brand-border-strong);
+  background: var(--brand-surface);
+  color: var(--brand-ink);
 }
 
 .icon-button.danger {
@@ -430,8 +451,8 @@ pre {
   gap: 8px;
   min-height: 42px;
   padding: 0 14px;
-  border: 1px solid #1f6f49;
-  background: #1f6f49;
+  border: 1px solid var(--brand-purple);
+  background: var(--brand-purple);
   color: #ffffff;
 }
 
@@ -460,9 +481,9 @@ pre {
 
 .info-alert {
   margin: 18px 20px 0;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1e3a8a;
+  border: 1px solid #d8c9ff;
+  background: #f5f0ff;
+  color: #4b318f;
 }
 
 .page-alert {
@@ -517,22 +538,22 @@ pre {
 
 .setup-panel p {
   margin: 0;
-  color: #4f5b68;
+  color: var(--brand-muted);
 }
 
 .setup-panel pre {
   overflow-x: auto;
   margin: 0;
   padding: 14px;
-  border: 1px solid #d7dee8;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #243244;
+  background: #fff7fd;
+  color: var(--brand-ink);
 }
 
 .setup-panel span,
 .loading-panel {
-  color: #53606d;
+  color: var(--brand-muted);
   font-weight: 800;
 }
 
@@ -543,10 +564,10 @@ pre {
   align-items: center;
   margin-bottom: 14px;
   padding: 15px 18px;
-  border: 1px solid #d7dee8;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 10px 26px rgba(30, 41, 59, 0.05);
+  background: var(--brand-surface);
+  box-shadow: 0 10px 26px rgba(92, 50, 118, 0.08);
 }
 
 .availability-strip div {
@@ -556,13 +577,13 @@ pre {
 }
 
 .availability-strip span {
-  color: #526070;
+  color: var(--brand-muted);
   font-size: 0.9rem;
   font-weight: 800;
 }
 
 .availability-strip strong {
-  color: #0f766e;
+  color: var(--brand-magenta);
   font-size: 1.45rem;
   line-height: 1;
 }
@@ -573,19 +594,19 @@ pre {
   overflow: hidden;
   border: 0;
   border-radius: 999px;
-  background: #e6ebf1;
+  background: #ead7ec;
 }
 
 .availability-strip progress::-webkit-progress-bar {
-  background: #e6ebf1;
+  background: #ead7ec;
 }
 
 .availability-strip progress::-webkit-progress-value {
-  background: #0f766e;
+  background: var(--brand-purple);
 }
 
 .availability-strip progress::-moz-progress-bar {
-  background: #0f766e;
+  background: var(--brand-purple);
 }
 
 .stats-grid {
@@ -601,10 +622,10 @@ pre {
   gap: 14px;
   min-height: 92px;
   padding: 18px;
-  border: 1px solid #dde3eb;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 10px 26px rgba(30, 41, 59, 0.06);
+  background: var(--brand-surface);
+  box-shadow: 0 10px 26px rgba(92, 50, 118, 0.08);
 }
 
 .metric svg {
@@ -618,32 +639,32 @@ pre {
 }
 
 .metric span {
-  color: #5b6472;
+  color: var(--brand-muted);
   font-size: 0.86rem;
   font-weight: 700;
 }
 
 .metric strong {
   overflow-wrap: anywhere;
-  color: #111827;
+  color: var(--brand-ink);
   font-size: 1.85rem;
   line-height: 1;
 }
 
 .metric-blue svg {
-  color: #2563eb;
+  color: var(--brand-purple);
 }
 
 .metric-green svg {
-  color: #0f766e;
+  color: var(--brand-magenta);
 }
 
 .metric-amber svg {
-  color: #b45309;
+  color: #b65cdd;
 }
 
 .metric-ink svg {
-  color: #374151;
+  color: var(--brand-ink);
 }
 
 .workspace {
@@ -665,9 +686,9 @@ pre {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
   padding: 4px;
-  border: 1px solid #d1d9e4;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #eef2f6;
+  background: #f6e9f8;
 }
 
 .segmented-control button {
@@ -675,15 +696,15 @@ pre {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #4b5563;
+  color: var(--brand-muted);
   font-size: 0.84rem;
   font-weight: 850;
 }
 
 .segmented-control button.active {
-  background: #ffffff;
-  color: #0f766e;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+  background: var(--brand-surface);
+  color: var(--brand-magenta);
+  box-shadow: 0 2px 8px rgba(92, 50, 118, 0.14);
 }
 
 .list-panel {
@@ -707,10 +728,10 @@ pre {
   gap: 8px;
   min-height: 42px;
   padding: 0 12px;
-  border: 1px solid #cdd5df;
+  border: 1px solid #d9c8df;
   border-radius: 7px;
-  background: #ffffff;
-  color: #607084;
+  background: var(--brand-surface);
+  color: var(--brand-muted);
 }
 
 .search-field input {
@@ -750,26 +771,26 @@ pre {
   align-items: center;
   min-height: 112px;
   padding: 14px;
-  border: 1px solid #dce2ea;
+  border: 1px solid var(--brand-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--brand-surface);
 }
 
 .reservation-time {
   display: grid;
   justify-items: start;
   gap: 2px;
-  color: #4b5563;
+  color: var(--brand-muted);
 }
 
 .reservation-time strong {
-  color: #111827;
+  color: var(--brand-ink);
   font-size: 1.65rem;
   line-height: 1.05;
 }
 
 .reservation-time span {
-  color: #667085;
+  color: var(--brand-muted);
   font-size: 0.82rem;
   font-weight: 800;
 }
@@ -788,7 +809,7 @@ pre {
 
 .reservation-main h3 {
   overflow-wrap: anywhere;
-  color: #151b28;
+  color: var(--brand-ink);
   font-size: 1.1rem;
 }
 
@@ -803,13 +824,13 @@ pre {
 }
 
 .status-a-payer {
-  background: #fff7ed;
-  color: #9a3412;
+  background: #fff0fa;
+  color: #a0137e;
 }
 
 .status-paye {
-  background: #ecfdf5;
-  color: #047857;
+  background: #f2edff;
+  color: #4b318f;
 }
 
 .payment-pill {
@@ -818,22 +839,22 @@ pre {
   min-height: 26px;
   padding: 4px 8px;
   border-radius: 999px;
-  background: #f1f5f9;
-  color: #334155;
+  background: #f8edf9;
+  color: #4c3a57;
   font-size: 0.76rem;
   font-weight: 900;
 }
 
 .payment-paid {
-  background: #ecfdf5;
-  color: #047857;
+  background: #f2edff;
+  color: #4b318f;
 }
 
 .payment-open,
 .payment-pending,
 .payment-authorized {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: #fff0fa;
+  color: #a0137e;
 }
 
 .payment-failed,
@@ -850,7 +871,7 @@ pre {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 14px;
-  color: #4b5563;
+  color: var(--brand-muted);
   font-size: 0.9rem;
   font-weight: 700;
 }
@@ -877,15 +898,15 @@ pre {
   align-content: center;
   gap: 8px;
   min-height: 360px;
-  border: 1px dashed #c7d0dd;
+  border: 1px dashed var(--brand-border-strong);
   border-radius: 8px;
-  background: #fbfcfe;
-  color: #5b6472;
+  background: #fffafd;
+  color: var(--brand-muted);
   text-align: center;
 }
 
 .empty-state strong {
-  color: #151b28;
+  color: var(--brand-ink);
   font-size: 1rem;
 }
 
@@ -901,10 +922,6 @@ pre {
 }
 
 @media (max-width: 760px) {
-  .route-nav {
-    justify-content: center;
-  }
-
   .public-shell,
   .app-shell,
   .center-shell {
@@ -917,12 +934,28 @@ pre {
     flex-direction: column;
   }
 
+  .public-header {
+    align-items: center;
+  }
+
+  .public-title-block {
+    align-items: center;
+    gap: 0;
+  }
+
+  .zuru-logo {
+    width: 102px;
+  }
+
   .public-header h1,
   .topbar h1 {
     font-size: 2.25rem;
   }
 
-  .capacity-badge,
+  .public-header h1 {
+    font-size: 1.85rem;
+  }
+
   .topbar-date,
   .admin-actions {
     justify-content: center;
@@ -983,7 +1016,7 @@ pre {
   .reservation-form,
   .filters,
   .reservation-list,
-  .menu-section {
+  .menu-list {
     padding-left: 14px;
     padding-right: 14px;
   }
