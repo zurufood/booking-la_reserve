@@ -51,6 +51,13 @@ export function formatDate(date) {
   }).format(new Date(`${date}T12:00:00`));
 }
 
+export function formatEventDate(date) {
+  if (!date) return '';
+
+  const [, month, day] = date.split('-');
+  return `${day}.${month}`.toUpperCase();
+}
+
 export function formatLongDate(date) {
   if (!date) return '';
 
@@ -60,4 +67,15 @@ export function formatLongDate(date) {
     month: 'long',
     year: 'numeric',
   }).format(new Date(`${date}T12:00:00`));
+}
+
+export function formatDateTime(value) {
+  if (!value) return '';
+
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 }

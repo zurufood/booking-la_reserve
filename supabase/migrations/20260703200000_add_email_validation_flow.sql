@@ -1,54 +1,12 @@
-create extension if not exists pgcrypto;
-
-create table if not exists public.admin_users (
-  user_id uuid primary key references auth.users (id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.reservations (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  service_date date not null,
-  first_name text not null default '',
-  last_name text not null default '',
-  email text not null,
-  phone text not null,
-  seats integer not null check (seats between 1 and 24),
-  validation_status text not null default 'confirmed' check (
-    validation_status in ('pending', 'confirmed', 'expired', 'cancelled')
-  ),
-  validation_token_hash text,
-  cancellation_token_hash text,
-  validation_sent_at timestamptz,
-  validation_expires_at timestamptz,
-  confirmed_at timestamptz default now(),
-  confirmation_email_sent_at timestamptz,
-  feedback_email_sent_at timestamptz
-);
-
-drop index if exists public.reservations_mollie_payment_id_idx;
 drop trigger if exists reservations_enforce_capacity on public.reservations;
 
 alter table public.reservations
-  add column if not exists first_name text not null default '',
-  add column if not exists last_name text not null default '',
-  add column if not exists validation_status text not null default 'confirmed',
+  add column if not exists validation_status text,
   add column if not exists validation_token_hash text,
-  add column if not exists cancellation_token_hash text,
   add column if not exists validation_sent_at timestamptz,
   add column if not exists validation_expires_at timestamptz,
-  add column if not exists confirmed_at timestamptz default now(),
-  add column if not exists confirmation_email_sent_at timestamptz,
-  add column if not exists feedback_email_sent_at timestamptz,
-  drop column if exists deposit_per_seat,
-  drop column if exists deposit_status,
-  drop column if exists mollie_payment_id,
-  drop column if exists mollie_checkout_url,
-  drop column if exists payment_status,
-  drop column if exists payment_amount_cents,
-  drop column if exists payment_created_at,
-  drop column if exists payment_paid_at;
+  add column if not exists confirmed_at timestamptz,
+  add column if not exists confirmation_email_sent_at timestamptz;
 
 update public.reservations
 set
@@ -67,55 +25,12 @@ alter table public.reservations
   add constraint reservations_validation_status_check
     check (validation_status in ('pending', 'confirmed', 'expired', 'cancelled'));
 
-create index if not exists reservations_service_date_idx
-  on public.reservations (service_date);
-
 create index if not exists reservations_validation_status_idx
   on public.reservations (validation_status);
-
-create index if not exists reservations_feedback_email_pending_idx
-  on public.reservations (service_date)
-  where validation_status = 'confirmed'
-    and feedback_email_sent_at is null;
 
 create unique index if not exists reservations_validation_token_hash_idx
   on public.reservations (validation_token_hash)
   where validation_token_hash is not null;
-
-create unique index if not exists reservations_cancellation_token_hash_idx
-  on public.reservations (cancellation_token_hash)
-  where cancellation_token_hash is not null;
-
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  );
-$$;
-
-create or replace function public.set_updated_at()
-returns trigger
-language plpgsql
-set search_path = public
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists reservations_set_updated_at on public.reservations;
-create trigger reservations_set_updated_at
-before update on public.reservations
-for each row
-execute function public.set_updated_at();
 
 create or replace function public.reservation_holds_seats(
   p_status text,
@@ -163,7 +78,6 @@ begin
 end;
 $$;
 
-drop trigger if exists reservations_enforce_capacity on public.reservations;
 create trigger reservations_enforce_capacity
 before insert or update of service_date, seats, validation_status, validation_expires_at on public.reservations
 for each row
@@ -209,43 +123,5 @@ drop function if exists public.create_public_reservation(date, text, text, integ
 drop function if exists public.create_public_reservation(date, text, text, text, text, integer, integer);
 drop function if exists public.create_public_reservation(date, text, text, text, text, integer);
 
-alter table public.admin_users enable row level security;
-alter table public.reservations enable row level security;
-
-drop policy if exists "Admins can read reservations" on public.reservations;
-create policy "Admins can read reservations"
-on public.reservations
-for select
-to authenticated
-using (public.is_admin());
-
-drop policy if exists "Admins can insert reservations" on public.reservations;
-create policy "Admins can insert reservations"
-on public.reservations
-for insert
-to authenticated
-with check (public.is_admin());
-
-drop policy if exists "Admins can update reservations" on public.reservations;
-create policy "Admins can update reservations"
-on public.reservations
-for update
-to authenticated
-using (public.is_admin())
-with check (public.is_admin());
-
-drop policy if exists "Admins can delete reservations" on public.reservations;
-create policy "Admins can delete reservations"
-on public.reservations
-for delete
-to authenticated
-using (public.is_admin());
-
-grant usage on schema public to anon, authenticated;
 grant execute on function public.get_public_availability(date, integer) to anon, authenticated;
 grant execute on function public.reservation_holds_seats(text, timestamptz) to anon, authenticated;
-grant execute on function public.is_admin() to authenticated;
-grant select, insert, update, delete on public.reservations to authenticated;
-
--- After creating your admin user in Supabase Auth, add it here:
--- insert into public.admin_users (user_id) values ('00000000-0000-0000-0000-000000000000');

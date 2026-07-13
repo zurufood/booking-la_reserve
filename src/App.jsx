@@ -20,22 +20,64 @@ import { MAX_SEATS } from './lib/config';
 import {
   NEXT_SERVICE_DATE,
   formatDate,
+  formatDateTime,
+  formatEventDate,
   formatLongDate,
   getThursdayOptions,
   isThursday,
 } from './lib/dates';
 import {
+  cancelReservation,
+  confirmReservation,
   createAdminReservation,
   createPublicReservation,
   deleteAdminReservation,
   fetchPublicAvailability,
   fetchReservations,
+  getValidationStatusLabel,
+  isReservationHoldingSeats,
+  previewReservationCancellation,
+  resendReservationSummary,
   updateAdminReservation,
+  validationStatusOptions,
 } from './lib/reservations';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
-import { menuSections } from './data/menu';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const frenchPhonePattern =
+  /^(?:(?:\+|00)33[\s.-]?[1-9](?:[\s.-]?\d{2}){4}|0[1-9](?:[\s.-]?\d{2}){4})$/;
+const PRESCREEN_DURATION_MS = 5000;
+const PRESCREEN_FADE_MS = 900;
+const PRESCREEN_IMAGE_SRC = '/affiche-preview.jpg';
+const PRESCREEN_STORAGE_KEY = 'zuru-prescreen-seen-v1';
+
+const emptySignupForm = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  seats: 2,
+};
+
+function hasSeenPrescreen() {
+  try {
+    return window.localStorage.getItem(PRESCREEN_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function markPrescreenSeen() {
+  try {
+    window.localStorage.setItem(PRESCREEN_STORAGE_KEY, 'true');
+  } catch {
+    // Storage may be unavailable in private browsing or locked-down contexts.
+  }
+}
+
+function isFrenchPhoneNumber(value) {
+  return frenchPhonePattern.test(value.trim());
+}
 
 const emptyAdminForm = {
   date: NEXT_SERVICE_DATE,
@@ -47,7 +89,10 @@ const emptyAdminForm = {
 };
 
 function getRoute() {
-  return window.location.pathname.startsWith('/admin') ? 'admin' : 'signup';
+  if (window.location.pathname.startsWith('/admin')) return 'admin';
+  if (window.location.pathname.startsWith('/validation')) return 'validation';
+  if (window.location.pathname.startsWith('/annulation')) return 'cancellation';
+  return 'signup';
 }
 
 function App() {
@@ -62,7 +107,10 @@ function App() {
     return () => window.removeEventListener('popstate', syncRoute);
   }, []);
 
-  return route === 'admin' ? <AdminPage /> : <SignupPage />;
+  if (route === 'admin') return <AdminPage />;
+  if (route === 'validation') return <ValidationPage />;
+  if (route === 'cancellation') return <CancellationPage />;
+  return <SignupPage />;
 }
 
 function ConfigNotice({ mode }) {
@@ -85,12 +133,18 @@ VITE_SUPABASE_ANON_KEY=...`}</pre>
 
 function SignupPage() {
   const [availability, setAvailability] = useState([]);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', seats: 2 });
+  const [form, setForm] = useState(() => ({ ...emptySignupForm }));
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [receipt, setReceipt] = useState(null);
+  const [duplicateReservation, setDuplicateReservation] = useState(null);
+  const [resendingSummary, setResendingSummary] = useState(false);
+  const [resendSummaryMessage, setResendSummaryMessage] = useState('');
+  const [showPrescreen, setShowPrescreen] = useState(() => !hasSeenPrescreen());
+  const [prescreenImageLoaded, setPrescreenImageLoaded] = useState(false);
+  const [prescreenClosing, setPrescreenClosing] = useState(false);
 
   async function loadAvailability() {
     setLoading(true);
@@ -112,6 +166,31 @@ function SignupPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (showPrescreen) {
+      markPrescreenSeen();
+    }
+  }, [showPrescreen]);
+
+  useEffect(() => {
+    if (!showPrescreen || !prescreenImageLoaded) {
+      return undefined;
+    }
+
+    const fadeTimeoutId = window.setTimeout(() => {
+      setPrescreenClosing(true);
+    }, PRESCREEN_DURATION_MS);
+
+    const hideTimeoutId = window.setTimeout(() => {
+      setShowPrescreen(false);
+    }, PRESCREEN_DURATION_MS + PRESCREEN_FADE_MS);
+
+    return () => {
+      window.clearTimeout(fadeTimeoutId);
+      window.clearTimeout(hideTimeoutId);
+    };
+  }, [prescreenImageLoaded, showPrescreen]);
+
   const selectedAvailability = availability.find((item) => item.date === NEXT_SERVICE_DATE);
   const remainingSeats = selectedAvailability?.remainingSeats ?? 0;
   const requestedSeats = Number(form.seats) || 0;
@@ -119,18 +198,16 @@ function SignupPage() {
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
     setReceipt(null);
+    setDuplicateReservation(null);
+    setResendSummaryMessage('');
     setErrors((current) => ({ ...current, [field]: undefined, form: undefined }));
   }
 
   function validateSignup() {
     const nextErrors = {};
 
-    if (!form.firstName.trim()) {
-      nextErrors.firstName = 'Prénom requis';
-    }
-
     if (!form.lastName.trim()) {
-      nextErrors.lastName = 'Nom requis';
+      nextErrors.lastName = 'Nom complet requis';
     }
 
     if (!emailPattern.test(form.email.trim())) {
@@ -139,10 +216,12 @@ function SignupPage() {
 
     if (!form.phone.trim()) {
       nextErrors.phone = 'Téléphone requis';
+    } else if (!isFrenchPhoneNumber(form.phone)) {
+      nextErrors.phone = 'Numéro de téléphone français invalide';
     }
 
     if (!isThursday(NEXT_SERVICE_DATE)) {
-      nextErrors.date = "Date d'inscription invalide";
+      nextErrors.form = "Date d'inscription invalide";
     }
 
     if (!requestedSeats || requestedSeats < 1) {
@@ -171,12 +250,18 @@ function SignupPage() {
 
     try {
       const reservation = await createPublicReservation({
-        firstName: form.firstName,
+        firstName: '',
         lastName: form.lastName,
         email: form.email,
         phone: form.phone,
         seats: requestedSeats,
       });
+
+      if (reservation?.status === 'duplicate') {
+        setDuplicateReservation(reservation);
+        setResendSummaryMessage('');
+        return;
+      }
 
       setReceipt(reservation);
       await loadAvailability();
@@ -187,166 +272,497 @@ function SignupPage() {
     }
   }
 
+  function startAnotherReservation() {
+    setForm({ ...emptySignupForm });
+    setErrors({});
+    setReceipt(null);
+    setDuplicateReservation(null);
+    setResendSummaryMessage('');
+    loadAvailability();
+  }
+
+  async function handleResendSummary() {
+    if (resendingSummary) {
+      return;
+    }
+
+    setResendingSummary(true);
+    setErrors({});
+    setResendSummaryMessage('');
+
+    try {
+      const result = await resendReservationSummary({ email: form.email });
+      setResendSummaryMessage(
+        result?.message || 'Le récapitulatif vient d’être renvoyé à cette adresse email.',
+      );
+    } catch (error) {
+      setErrors({ form: error.message });
+    } finally {
+      setResendingSummary(false);
+    }
+  }
+
   if (!isSupabaseConfigured) {
     return <ConfigNotice mode="signup" />;
   }
 
+  const isReservationVisible = prescreenClosing || !showPrescreen;
+  const hiddenReservationProps = isReservationVisible ? {} : { inert: '', 'aria-hidden': 'true' };
+
   return (
-    <main className="public-shell">
+    <>
+      {showPrescreen && (
+        <main
+          className={`prescreen${prescreenClosing ? ' is-closing' : ''}`}
+          aria-label="Affiche Zuru Zuru Supper Club"
+        >
+          <div className="prescreen-frame">
+            <img
+              className="prescreen-poster"
+              src={PRESCREEN_IMAGE_SRC}
+              alt="Affiche Zuru Zuru Supper Club du 16.07"
+              onLoad={() => setPrescreenImageLoaded(true)}
+              onError={() => setShowPrescreen(false)}
+            />
+            <div className="prescreen-progress" aria-hidden="true">
+              <span
+                className={
+                  prescreenImageLoaded
+                    ? 'prescreen-progress-fill is-active'
+                    : 'prescreen-progress-fill'
+                }
+              />
+            </div>
+          </div>
+        </main>
+      )}
+
+      <main
+        className={`public-shell public-shell-transition${
+          isReservationVisible ? ' is-visible' : ''
+        }`}
+        {...hiddenReservationProps}
+      >
       <section className="public-header">
         <div className="public-title-block">
-          <img className="zuru-logo" src="/logo-zuruzuru.svg" alt="Zuru Zuru Supper Club" />
-          <h1>Réservations</h1>
+          <div className="brand-date-lockup">
+            <img className="zuru-logo" src="/zuru-logo-v2.svg" alt="Zuru Zuru Supper Club" />
+            <span className="brand-date-separator" aria-hidden="true" />
+            <span className="event-date" aria-label={formatEventDate(NEXT_SERVICE_DATE)}>
+              {formatEventDate(NEXT_SERVICE_DATE)}
+            </span>
+          </div>
           <p className="lead">
             Une table, des produits locaux, des ingrédients de saison, des vins choisis avec soin,
             des conversations qui rapprochent.
+          </p>
+          <p className="menu-timing">
+            <span>Apéritif à partir de 18:00</span>
+            <span className="menu-timing-separator" aria-hidden="true">
+              /
+            </span>
+            <span>Début du dîner à 20:30</span>
           </p>
         </div>
       </section>
 
       <div className="public-grid">
-        <section className="menu-panel" aria-labelledby="menu-title">
-          <div className="panel-heading compact-heading">
-            <div>
-              <p className="eyebrow">Composition</p>
-              <h2 id="menu-title">
-                Menu de saison <span className="menu-price">30€</span>
-              </h2>
-            </div>
-          </div>
-          <ul className="menu-list">
-            {menuSections.map((section) => (
-              <li className="menu-section" key={section.title}>
-                <span>{section.title}</span>
-                {section.items.length > 0 && (
-                  <ul>
-                    {section.items.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="signup-panel" aria-labelledby="signup-title">
-          <div className="panel-heading compact-heading">
-            <div>
-              <p className="eyebrow">Inscription</p>
-              <h2 id="signup-title">Vos informations</h2>
-            </div>
-          </div>
-
-          {loadError && (
-            <div className="alert error-alert">
-              <span>{loadError}</span>
-              <button className="icon-text-button" type="button" onClick={loadAvailability}>
-                <RefreshCw size={16} />
-                Réessayer
-              </button>
-            </div>
+        <section
+          className={
+            receipt || duplicateReservation
+              ? 'signup-panel reservation-validation-panel'
+              : 'signup-panel'
+          }
+          aria-labelledby="signup-title"
+        >
+          {!receipt && !duplicateReservation && (
+            <span className="availability-badge" aria-live="polite">
+              {loading
+                ? '...'
+                : `${remainingSeats} place${remainingSeats > 1 ? 's' : ''} restante${
+                    remainingSeats > 1 ? 's' : ''
+                  }`}
+            </span>
           )}
-
-          <form className="signup-form" onSubmit={handleSubmit}>
-            <div className="field field-full">
-              <span>Date</span>
-              <div className="fixed-date-display" aria-invalid={Boolean(errors.date)}>
-                <CalendarDays size={20} aria-hidden="true" />
+          {receipt ? (
+            <>
+              <h2 id="signup-title">Plus qu'une étape avant de valider votre réservation</h2>
+              <p>
+                Un email de validation vient de vous être envoyé pour confirmer votre réservation de{' '}
+                {receipt.seats} place{receipt.seats > 1 ? 's' : ''} pour le{' '}
+                {formatLongDate(receipt.serviceDate)}. Le lien est valable 2 heures.
+              </p>
+              <button className="secondary-button" type="button" onClick={startAnotherReservation}>
+                Faire une autre réservation
+              </button>
+            </>
+          ) : duplicateReservation ? (
+            <>
+              <h2 id="signup-title">Une réservation existe déjà avec cet email</h2>
+              <p>
+                Une réservation a déjà été faite avec {form.email.trim().toLowerCase()}. Vous pouvez
+                recevoir à nouveau le récapitulatif par email.
+              </p>
+              {duplicateReservation.reservation && (
+                <p>
+                  {duplicateReservation.reservation.seats} place
+                  {duplicateReservation.reservation.seats > 1 ? 's' : ''} pour le{' '}
+                  {formatLongDate(duplicateReservation.reservation.serviceDate)}.
+                </p>
+              )}
+              {resendSummaryMessage && (
+                <p className="reservation-panel-feedback">{resendSummaryMessage}</p>
+              )}
+              {errors.form && <p className="reservation-panel-error">{errors.form}</p>}
+              <div className="reservation-message-actions">
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={handleResendSummary}
+                  disabled={resendingSummary}
+                >
+                  {resendingSummary ? 'Envoi...' : 'Renvoyer le récapitulatif'}
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => {
+                    setDuplicateReservation(null);
+                    setResendSummaryMessage('');
+                    setErrors({});
+                  }}
+                >
+                  Modifier l'email
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="panel-heading compact-heading">
                 <div>
-                  <strong>{formatLongDate(NEXT_SERVICE_DATE)}</strong>
-                  <small>
-                    {loading
-                      ? 'Chargement des places...'
-                      : `${remainingSeats} place${remainingSeats > 1 ? 's' : ''} restante${
-                          remainingSeats > 1 ? 's' : ''
-                        }`}
-                  </small>
+                  <h2 className="reservation-title" id="signup-title">
+                    <span className="reservation-title-text">Réservations</span>
+                  </h2>
+                  <p className="menu-summary">
+                    Menu de saison 28€
+                    <br />
+                    <span className="menu-summary-details">
+                      2 amuse-bouche, 2 entrées, 1 plat, 1 dessert
+                      <br />
+                      Règlement sur place
+                    </span>
+                  </p>
                 </div>
               </div>
-              {errors.date && <small>{errors.date}</small>}
+
+              {loadError && (
+                <div className="alert error-alert">
+                  <span>{loadError}</span>
+                  <button className="icon-text-button" type="button" onClick={loadAvailability}>
+                    <RefreshCw size={16} />
+                    Réessayer
+                  </button>
+                </div>
+              )}
+
+              <form className="signup-form" onSubmit={handleSubmit}>
+                <label className="field">
+                  <span>Nom complet</span>
+                  <input
+                    value={form.lastName}
+                    onChange={(event) => updateField('lastName', event.target.value)}
+                    placeholder="Votre nom complet"
+                    autoComplete="name"
+                    aria-invalid={Boolean(errors.lastName)}
+                  />
+                  {errors.lastName && <small>{errors.lastName}</small>}
+                </label>
+
+                <label className="field">
+                  <span>Email</span>
+                  <input
+                    value={form.email}
+                    onChange={(event) => updateField('email', event.target.value)}
+                    placeholder="vous@email.fr"
+                    type="email"
+                    autoComplete="email"
+                    aria-invalid={Boolean(errors.email)}
+                  />
+                  {errors.email && <small>{errors.email}</small>}
+                </label>
+
+                <label className="field">
+                  <span>Téléphone</span>
+                  <input
+                    value={form.phone}
+                    onChange={(event) => updateField('phone', event.target.value)}
+                    placeholder="06 00 00 00 00"
+                    inputMode="tel"
+                    aria-invalid={Boolean(errors.phone)}
+                  />
+                  {errors.phone && <small>{errors.phone}</small>}
+                </label>
+
+                <label className="field">
+                  <span>Places</span>
+                  <input
+                    value={form.seats}
+                    onChange={(event) => updateField('seats', event.target.value)}
+                    min="1"
+                    max={Math.max(1, remainingSeats)}
+                    type="number"
+                    aria-invalid={Boolean(errors.seats)}
+                  />
+                  {errors.seats && <small>{errors.seats}</small>}
+                </label>
+
+                {errors.form && <div className="alert error-alert field-full">{errors.form}</div>}
+
+                <button
+                  className="primary-button field-full signup-submit-button"
+                  type="submit"
+                  disabled={submitting || loading}
+                >
+                  <CheckCircle2 size={18} />
+                  <span>{submitting ? 'Enregistrement...' : 'Valider ma réservation'}</span>
+                </button>
+              </form>
+            </>
+          )}
+        </section>
+
+        <section className="location-panel" aria-label="Lieu">
+          <div className="partner-logos">
+            <div className="partner-location">
+              <img src="/microwinnerie.png" alt="La Microwinnerie" />
+              <address>
+                87 Quai des Queyries
+                <br />
+                33100 Bordeaux
+              </address>
             </div>
+            <img src="/darwin.png" alt="Darwin" />
+          </div>
+        </section>
+      </div>
+    </main>
+    </>
+  );
+}
 
-            <label className="field">
-              <span>Prénom</span>
-              <input
-                value={form.firstName}
-                onChange={(event) => updateField('firstName', event.target.value)}
-                placeholder="Votre prénom"
-                autoComplete="given-name"
-                aria-invalid={Boolean(errors.firstName)}
-              />
-              {errors.firstName && <small>{errors.firstName}</small>}
-            </label>
+function ValidationPage() {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-            <label className="field">
-              <span>Nom</span>
-              <input
-                value={form.lastName}
-                onChange={(event) => updateField('lastName', event.target.value)}
-                placeholder="Votre nom"
-                autoComplete="family-name"
-                aria-invalid={Boolean(errors.lastName)}
-              />
-              {errors.lastName && <small>{errors.lastName}</small>}
-            </label>
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
 
-            <label className="field">
-              <span>Email</span>
-              <input
-                value={form.email}
-                onChange={(event) => updateField('email', event.target.value)}
-                placeholder="vous@email.fr"
-                type="email"
-                aria-invalid={Boolean(errors.email)}
-              />
-              {errors.email && <small>{errors.email}</small>}
-            </label>
+    async function validateToken() {
+      const token = new URLSearchParams(window.location.search).get('token') || '';
 
-            <label className="field">
-              <span>Téléphone</span>
-              <input
-                value={form.phone}
-                onChange={(event) => updateField('phone', event.target.value)}
-                placeholder="06 00 00 00 00"
-                inputMode="tel"
-                aria-invalid={Boolean(errors.phone)}
-              />
-              {errors.phone && <small>{errors.phone}</small>}
-            </label>
+      if (!token) {
+        setResult({
+          status: 'invalid',
+          message: 'Lien de validation invalide.',
+        });
+        setLoading(false);
+        return;
+      }
 
-            <label className="field">
-              <span>Places</span>
-              <input
-                value={form.seats}
-                onChange={(event) => updateField('seats', event.target.value)}
-                min="1"
-                max={Math.max(1, remainingSeats)}
-                type="number"
-                aria-invalid={Boolean(errors.seats)}
-              />
-              {errors.seats && <small>{errors.seats}</small>}
-            </label>
+      try {
+        const validationResult = await confirmReservation(token);
+        setResult(validationResult);
+      } catch (validationError) {
+        setError(validationError.message);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-            {errors.form && <div className="alert error-alert field-full">{errors.form}</div>}
+    validateToken();
+  }, []);
 
-            <button className="primary-button field-full" type="submit" disabled={submitting || loading}>
-              <CheckCircle2 size={18} />
-              <span>{submitting ? 'Enregistrement...' : "Valider l'inscription"}</span>
-            </button>
-          </form>
+  if (!isSupabaseConfigured) {
+    return <ConfigNotice mode="signup" />;
+  }
 
-          {receipt && (
-            <div className="success-panel">
-              <CheckCircle2 size={24} aria-hidden="true" />
-              <div>
-                <strong>Inscription enregistrée</strong>
-                <span>
-                  {receipt.seats} place{receipt.seats > 1 ? 's' : ''} pour le{' '}
-                  {formatLongDate(receipt.serviceDate)}.
-                </span>
-              </div>
+  const status = result?.status;
+  const isSuccess = status === 'confirmed' || status === 'already_confirmed';
+  const isExpired = status === 'expired';
+  const title = loading
+    ? 'Validation en cours'
+    : isSuccess
+      ? 'Inscription confirmée'
+      : isExpired
+        ? 'Lien expiré'
+        : 'Validation impossible';
+
+  return (
+    <main className="center-shell">
+      <div className="validation-page-content">
+        <img className="validation-logo" src="/zuru-logo-v2.svg" alt="Zuru Zuru Supper Club" />
+        <section className="setup-panel validation-panel">
+          {loading ? (
+            <RefreshCw size={34} aria-hidden="true" />
+          ) : !isSuccess ? (
+            <XCircle size={34} aria-hidden="true" />
+          ) : null}
+          <h1>{title}</h1>
+          {loading ? (
+            <p>Nous confirmons votre inscription...</p>
+          ) : error ? (
+            <p>{error}</p>
+          ) : (
+            <p>
+              {result?.message ||
+                "Nous n'avons pas pu valider cette inscription. Merci de refaire une inscription."}
+            </p>
+          )}
+          {result?.reservation && (
+            <div className="validation-summary">
+              <strong>
+                {result.reservation.seats} place{result.reservation.seats > 1 ? 's' : ''}
+              </strong>
+              <span>{formatLongDate(result.reservation.serviceDate)}</span>
             </div>
+          )}
+          {(isExpired || status === 'invalid') && (
+            <a className="primary-button" href="/inscription">
+              Refaire une inscription
+            </a>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function CancellationPage() {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
+  const token = useMemo(() => new URLSearchParams(window.location.search).get('token') || '', []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return;
+    }
+
+    async function loadCancellation() {
+      if (!token) {
+        setResult({
+          status: 'invalid',
+          message: "Lien d'annulation invalide.",
+        });
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const cancellationResult = await previewReservationCancellation(token);
+        setResult(cancellationResult);
+      } catch (cancellationError) {
+        setError(cancellationError.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadCancellation();
+  }, [token]);
+
+  async function handleCancelReservation() {
+    if (!token || cancelling) {
+      return;
+    }
+
+    setCancelling(true);
+    setError('');
+
+    try {
+      const cancellationResult = await cancelReservation(token);
+      setResult(cancellationResult);
+    } catch (cancellationError) {
+      setError(cancellationError.message);
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  if (!isSupabaseConfigured) {
+    return <ConfigNotice mode="signup" />;
+  }
+
+  const status = result?.status;
+  const isReady = status === 'ready';
+  const isCancelled = status === 'cancelled';
+  const isInvalid = status === 'invalid';
+  const title = loading
+    ? 'Chargement en cours'
+    : isCancelled
+      ? 'Réservation annulée'
+      : isReady
+        ? 'Annuler ma réservation'
+        : 'Annulation impossible';
+
+  return (
+    <main className="center-shell">
+      <div className="validation-page-content">
+        <img className="validation-logo" src="/zuru-logo-v2.svg" alt="Zuru Zuru Supper Club" />
+        <section className="setup-panel validation-panel">
+          {loading ? (
+            <RefreshCw size={34} aria-hidden="true" />
+          ) : !isReady && !isCancelled ? (
+            <XCircle size={34} aria-hidden="true" />
+          ) : null}
+          <h1>{title}</h1>
+          {loading ? (
+            <p>Nous récupérons votre réservation...</p>
+          ) : error ? (
+            <p>{error}</p>
+          ) : (
+            <p>
+              {result?.message ||
+                "Nous n'avons pas pu retrouver cette réservation. Merci de refaire une inscription."}
+            </p>
+          )}
+          {result?.reservation && (
+            <div className="validation-summary">
+              <strong>
+                {result.reservation.seats} place{result.reservation.seats > 1 ? 's' : ''}
+              </strong>
+              <span>{formatLongDate(result.reservation.serviceDate)}</span>
+            </div>
+          )}
+          {isReady && (
+            <div className="validation-actions">
+              <button
+                className="primary-button"
+                type="button"
+                onClick={handleCancelReservation}
+                disabled={cancelling}
+              >
+                {cancelling ? 'Annulation...' : 'Annuler ma réservation'}
+              </button>
+              <a className="secondary-button" href="/inscription">
+                Garder ma réservation
+              </a>
+            </div>
+          )}
+          {isCancelled && (
+            <a className="primary-button" href="/inscription">
+              Faire une autre réservation
+            </a>
+          )}
+          {isInvalid && (
+            <a className="primary-button" href="/inscription">
+              Refaire une inscription
+            </a>
           )}
         </section>
       </div>
@@ -382,7 +798,7 @@ function AdminPage() {
 
   if (authLoading) {
     return (
-      <main className="center-shell">
+      <main className="center-shell admin-shell admin-auth-shell">
         <div className="loading-panel">Connexion en cours...</div>
       </main>
     );
@@ -419,7 +835,7 @@ function AdminLogin() {
   }
 
   return (
-    <main className="center-shell">
+    <main className="center-shell admin-shell admin-auth-shell">
       <section className="login-panel">
         <ShieldCheck size={34} aria-hidden="true" />
         <h1>Connexion admin</h1>
@@ -452,6 +868,7 @@ function AdminDashboard({ userEmail }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('tous');
   const [dateFilter, setDateFilter] = useState(NEXT_SERVICE_DATE);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyAdminForm);
@@ -484,7 +901,10 @@ function AdminDashboard({ userEmail }) {
   function getBookedSeats(date, exceptId = null) {
     return reservations
       .filter(
-        (reservation) => reservation.date === date && reservation.id !== exceptId,
+        (reservation) =>
+          reservation.date === date &&
+          reservation.id !== exceptId &&
+          isReservationHoldingSeats(reservation),
       )
       .reduce((total, reservation) => total + Number(reservation.seats), 0);
   }
@@ -505,22 +925,29 @@ function AdminDashboard({ userEmail }) {
             .toLocaleLowerCase('fr-FR')
             .includes(normalizedQuery);
         const matchesDate = !dateFilter || reservation.date === dateFilter;
+        const matchesStatus =
+          statusFilter === 'tous' || reservation.effectiveValidationStatus === statusFilter;
 
-        return matchesQuery && matchesDate;
+        return matchesQuery && matchesDate && matchesStatus;
       })
       .sort((a, b) => `${a.date}-${a.createdAt}`.localeCompare(`${b.date}-${b.createdAt}`));
-  }, [dateFilter, query, reservations]);
+  }, [dateFilter, query, reservations, statusFilter]);
 
   const stats = useMemo(() => {
     const visibleReservations = reservations.filter((reservation) => reservation.date === dateFilter);
-    const bookedSeats = visibleReservations.reduce(
+    const activeReservations = visibleReservations.filter(isReservationHoldingSeats);
+    const bookedSeats = activeReservations.reduce(
       (total, reservation) => total + reservation.seats,
       0,
     );
+    const pendingCount = visibleReservations.filter(
+      (reservation) => reservation.effectiveValidationStatus === 'pending',
+    ).length;
 
     return {
       reservationCount: visibleReservations.length,
       bookedSeats,
+      pendingCount,
       remainingSeats: Math.max(0, MAX_SEATS - bookedSeats),
     };
   }, [dateFilter, reservations]);
@@ -544,12 +971,8 @@ function AdminDashboard({ userEmail }) {
       nextErrors.date = 'Choisis un jeudi';
     }
 
-    if (!form.firstName.trim()) {
-      nextErrors.firstName = 'Prénom requis';
-    }
-
     if (!form.lastName.trim()) {
-      nextErrors.lastName = 'Nom requis';
+      nextErrors.lastName = 'Nom complet requis';
     }
 
     if (!emailPattern.test(form.email.trim())) {
@@ -558,6 +981,8 @@ function AdminDashboard({ userEmail }) {
 
     if (!form.phone.trim()) {
       nextErrors.phone = 'Téléphone requis';
+    } else if (!isFrenchPhoneNumber(form.phone)) {
+      nextErrors.phone = 'Numéro de téléphone français invalide';
     }
 
     if (!seats || seats < 1) {
@@ -584,7 +1009,7 @@ function AdminDashboard({ userEmail }) {
 
     const payload = {
       date: form.date,
-      firstName: form.firstName,
+      firstName: '',
       lastName: form.lastName,
       email: form.email,
       phone: form.phone,
@@ -615,10 +1040,11 @@ function AdminDashboard({ userEmail }) {
 
   function editReservation(reservation) {
     setEditingId(reservation.id);
+    const reservationName = [reservation.firstName, reservation.lastName].filter(Boolean).join(' ');
     setForm({
       date: reservation.date,
-      firstName: reservation.firstName,
-      lastName: reservation.lastName,
+      firstName: '',
+      lastName: reservationName,
       email: reservation.email,
       phone: reservation.phone,
       seats: reservation.seats,
@@ -648,7 +1074,7 @@ function AdminDashboard({ userEmail }) {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell admin-shell">
       <header className="topbar">
         <div>
           <p className="eyebrow">Dashboard admin</p>
@@ -687,11 +1113,18 @@ function AdminDashboard({ userEmail }) {
         <article className="metric metric-green">
           <CheckCircle2 size={22} aria-hidden="true" />
           <div>
-            <span>Places réservées</span>
+            <span>Places bloquées</span>
             <strong>{stats.bookedSeats}</strong>
           </div>
         </article>
         <article className="metric metric-amber">
+          <Mail size={22} aria-hidden="true" />
+          <div>
+            <span>En attente</span>
+            <strong>{stats.pendingCount}</strong>
+          </div>
+        </article>
+        <article className="metric metric-ink">
           <CalendarDays size={22} aria-hidden="true" />
           <div>
             <span>Places restantes</span>
@@ -743,22 +1176,11 @@ function AdminDashboard({ userEmail }) {
             </div>
 
             <label className="field">
-              <span>Prénom</span>
-              <input
-                value={form.firstName}
-                onChange={(event) => updateForm('firstName', event.target.value)}
-                autoComplete="given-name"
-                aria-invalid={Boolean(formErrors.firstName)}
-              />
-              {formErrors.firstName && <small>{formErrors.firstName}</small>}
-            </label>
-
-            <label className="field">
-              <span>Nom</span>
+              <span>Nom complet</span>
               <input
                 value={form.lastName}
                 onChange={(event) => updateForm('lastName', event.target.value)}
-                autoComplete="family-name"
+                autoComplete="name"
                 aria-invalid={Boolean(formErrors.lastName)}
               />
               {formErrors.lastName && <small>{formErrors.lastName}</small>}
@@ -770,6 +1192,7 @@ function AdminDashboard({ userEmail }) {
                 value={form.email}
                 onChange={(event) => updateForm('email', event.target.value)}
                 type="email"
+                autoComplete="email"
                 aria-invalid={Boolean(formErrors.email)}
               />
               {formErrors.email && <small>{formErrors.email}</small>}
@@ -844,6 +1267,16 @@ function AdminDashboard({ userEmail }) {
                 ))}
               </select>
             </label>
+            <label className="field compact-field">
+              <span>Statut</span>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                {validationStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="reservation-list">
@@ -860,6 +1293,7 @@ function AdminDashboard({ userEmail }) {
                 const reservationName =
                   [reservation.firstName, reservation.lastName].filter(Boolean).join(' ') ||
                   reservation.email;
+                const status = reservation.effectiveValidationStatus;
 
                 return (
                   <article className="reservation-card" key={reservation.id}>
@@ -872,6 +1306,9 @@ function AdminDashboard({ userEmail }) {
                     <div className="reservation-main">
                       <div className="reservation-title-row">
                         <h3>{reservationName}</h3>
+                        <span className={`status-pill status-${status}`}>
+                          {getValidationStatusLabel(status)}
+                        </span>
                       </div>
                       <div className="reservation-meta">
                         <a href={`mailto:${reservation.email}`}>
@@ -882,6 +1319,18 @@ function AdminDashboard({ userEmail }) {
                           <Phone size={15} aria-hidden="true" />
                           {reservation.phone}
                         </a>
+                        {status === 'pending' && reservation.validationExpiresAt && (
+                          <span>
+                            <CalendarDays size={15} aria-hidden="true" />
+                            Expire le {formatDateTime(reservation.validationExpiresAt)}
+                          </span>
+                        )}
+                        {status === 'confirmed' && reservation.confirmedAt && (
+                          <span>
+                            <CheckCircle2 size={15} aria-hidden="true" />
+                            Confirmée le {formatDateTime(reservation.confirmedAt)}
+                          </span>
+                        )}
                       </div>
                     </div>
 

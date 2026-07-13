@@ -1,1 +1,14 @@
-# No Edge Functions are required on the no-payment branch.
+[functions.create-reservation-request]
+verify_jwt = false
+
+[functions.confirm-reservation]
+verify_jwt = false
+
+[functions.cancel-reservation]
+verify_jwt = false
+
+[functions.resend-reservation-summary]
+verify_jwt = false
+
+[functions.send-feedback-emails]
+verify_jwt = false
