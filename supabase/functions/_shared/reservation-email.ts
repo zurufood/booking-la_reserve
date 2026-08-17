@@ -1,6 +1,6 @@
 const RESEND_API_URL = 'https://api.resend.com/emails';
 const EVENT_ADDRESS = 'La Réserve - Darwin, 87 Quai des Queyries, 33100 Bordeaux';
-const ADMIN_RESERVATION_EMAIL = 'zurufood@gmail.com';
+const ADMIN_RESERVATION_EMAIL = 'zuruzurufood@gmail.com';
 
 const menuSections = [
   '2x Amuse-bouche',
@@ -17,6 +17,17 @@ export type ReservationEmailData = {
   seats: number;
   serviceDate: string;
 };
+
+export type PaymentReservationEmailData = ReservationEmailData & {
+  paymentAmountCents?: number | null;
+  helloAssoPaymentId?: number | string | null;
+};
+
+function formatMoneyCents(amountCents?: number | null) {
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(
+    Number(amountCents || 0) / 100,
+  );
+}
 
 function requireEnv(name: string) {
   const value = Deno.env.get(name);
@@ -80,14 +91,23 @@ function buildMenuHtml() {
     .join('');
 }
 
-function wrapHtml(title: string, lead: string, body: string) {
+function wrapHtml(
+  title: string,
+  lead: string,
+  body: string,
+  { headerLogoUrl }: { headerLogoUrl?: string } = {},
+) {
+  const header = headerLogoUrl
+    ? `<div style="margin:0 0 24px;text-align:center;"><img src="${escapeHtml(headerLogoUrl)}" width="300" alt="Zuru Zuru" style="display:inline-block;width:100%;max-width:300px;height:auto;border:0;" /></div>`
+    : '<p style="margin:0 0 8px;color:#d817a8;font-size:13px;font-weight:700;text-transform:uppercase;">Zuru Zuru Supper Club</p>';
+
   return `
     <!doctype html>
     <html lang="fr">
       <body style="margin:0;padding:0;background:#f4f5f3;font-family:Arial,sans-serif;color:#17202a;">
         <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
           <div style="background:#ffffff;border:1px solid #dce2da;border-radius:8px;padding:24px;">
-            <p style="margin:0 0 8px;color:#d817a8;font-size:13px;font-weight:700;text-transform:uppercase;">Zuru Zuru Supper Club</p>
+            ${header}
             <h1 style="margin:0 0 12px;color:#111827;font-size:28px;line-height:1.15;">${escapeHtml(title)}</h1>
             <p style="margin:0 0 22px;color:#465163;">${escapeHtml(lead)}</p>
             ${body}
@@ -136,6 +156,117 @@ async function sendEmail({
     const errorText = await response.text();
     throw new Error(`Email impossible: ${errorText || response.statusText}`);
   }
+
+  const result = await response.json().catch(() => ({}));
+  if (!result.id) throw new Error('Email accepté sans identifiant de suivi Resend.');
+  return { id: String(result.id) };
+}
+
+export function buildSupperClubReminderEmail({
+  firstName,
+  paymentUrl,
+  testLabel,
+  logoUrl = 'https://lareserve.zuruzuru.fr/zuru-logo-email.png',
+}: {
+  firstName: string;
+  paymentUrl?: string;
+  testLabel?: string;
+  logoUrl?: string;
+}) {
+  const subject = 'À demain pour notre premier Supper Club !';
+  const greeting = `Cher ${firstName || 'invité'},`;
+  const paymentText = paymentUrl
+    ? ['', 'Voici le lien de paiement pour votre réservation :', paymentUrl]
+    : [];
+  const testText = testLabel ? [`[EMAIL TEST – ${testLabel}]`, ''] : [];
+  const text = [
+    ...testText,
+    greeting,
+    '',
+    'Nous sommes très heureux de vous accueillir demain pour la toute première édition de notre Supper Club à La Réserve, au sein de Darwin.',
+    '',
+    "Notre envie est simple : réunir des bons vivants autour d'une grande table, partager un repas cuisiné avec passion à partir d'ingrédients de saison, locaux et soigneusement cultivés, dans un esprit de découverte, de générosité et de convivialité.",
+    '',
+    'Nous avons hâte de partager cette soirée avec vous !',
+    '',
+    'Voici quelques informations pratiques :',
+    '- À partir de 18h30 : apéritif devant La Réserve',
+    '- 20h30 : dîner en 4 services',
+    '',
+    'Adresse',
+    'Darwin – La Réserve',
+    '87 Quai des Queyries',
+    '33100 Bordeaux',
+    ...paymentText,
+    '',
+    'À demain,',
+    '',
+    'Jérémie et Christophe',
+  ].join('\n');
+
+  const testBanner = testLabel
+    ? `<div style="margin:0 0 20px;padding:12px;border:2px solid #d97706;background:#fffbeb;color:#92400e;font-weight:700;text-align:center;">EMAIL TEST – ${escapeHtml(testLabel)}</div>`
+    : '';
+  const paymentHtml = paymentUrl
+    ? `
+      <p style="margin:24px 0 12px;color:#17202a;">Voici le lien de paiement pour votre réservation :</p>
+      <p style="margin:0 0 12px;">
+        <a href="${escapeHtml(paymentUrl)}" style="display:inline-block;padding:13px 18px;border-radius:5px;background:#000000;color:#ffffff;font-weight:700;text-decoration:none;">Régler ma réservation</a>
+      </p>
+      <p style="margin:0;overflow-wrap:anywhere;"><a href="${escapeHtml(paymentUrl)}" style="color:#465163;">${escapeHtml(paymentUrl)}</a></p>
+    `
+    : '';
+  const html = `
+    <!doctype html>
+    <html lang="fr">
+      <body style="margin:0;padding:0;background:#f4f5f3;font-family:Arial,sans-serif;color:#17202a;">
+        <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
+          <div style="background:#ffffff;border:1px solid #dce2da;border-radius:8px;padding:28px;text-align:center;">
+            ${testBanner}
+            <div style="margin:0 0 28px;text-align:center;">
+              <img src="${escapeHtml(logoUrl)}" width="300" alt="Zuru Zuru Supper Club" style="display:inline-block;width:100%;max-width:300px;height:auto;border:0;" />
+            </div>
+            <p style="margin:0 0 22px;">${escapeHtml(greeting)}</p>
+            <p style="margin:0 0 18px;line-height:1.6;">Nous sommes très heureux de vous accueillir demain pour la toute première édition de notre Supper Club à La Réserve, au sein de Darwin.</p>
+            <p style="margin:0 0 18px;line-height:1.6;">Notre envie est simple : réunir des bons vivants autour d'une grande table, partager un repas cuisiné avec passion à partir d'ingrédients de saison, locaux et soigneusement cultivés, dans un esprit de découverte, de générosité et de convivialité.</p>
+            <p style="margin:0 0 24px;line-height:1.6;">Nous avons hâte de partager cette soirée avec vous !</p>
+            <p style="margin:0 0 10px;"><strong>Voici quelques informations pratiques :</strong></p>
+            <ul style="margin:0 0 24px;padding:0;line-height:1.7;list-style-position:inside;text-align:center;">
+              <li>À partir de 18h30 : apéritif devant La Réserve</li>
+              <li>20h30 : dîner en 4 services</li>
+            </ul>
+            <p style="margin:0 0 4px;"><strong>Adresse</strong></p>
+            <p style="margin:0;line-height:1.55;">Darwin – La Réserve<br>87 Quai des Queyries<br>33100 Bordeaux</p>
+            ${paymentHtml}
+            <p style="margin:28px 0 0;line-height:1.6;">À demain,<br><br>Jérémie et Christophe</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  return { subject, text, html };
+}
+
+export async function sendSupperClubReminderEmail({
+  to,
+  firstName,
+  paymentUrl,
+  testLabel,
+}: {
+  to: string;
+  firstName: string;
+  paymentUrl?: string;
+  testLabel?: string;
+}) {
+  const publicSiteUrl = (Deno.env.get('PUBLIC_SITE_URL') || 'https://lareserve.zuruzuru.fr').replace(/\/$/, '');
+  const message = buildSupperClubReminderEmail({
+    firstName,
+    paymentUrl,
+    testLabel,
+    logoUrl: `${publicSiteUrl}/zuru-logo-email.png`,
+  });
+  return await sendEmail({ to, ...message });
 }
 
 export async function sendReservationValidationEmail(
@@ -200,6 +331,7 @@ export async function sendReservationConfirmedEmail(
     buildMenuText(),
     '',
     'Annulation',
+    'Nos menus sont préparés sur mesure à partir de produits frais et locaux. Les annulations sont possibles uniquement jusqu’à 48 heures avant le dîner.',
     'Si vous ne pouvez plus venir, annulez votre réservation ici :',
     cancellationUrl,
   ].join('\n');
@@ -211,6 +343,7 @@ export async function sendReservationConfirmedEmail(
       ${buildSummaryHtml(reservation)}
       <h2 style="margin:0 0 14px;color:#111827;font-size:20px;">Menu</h2>
       <ul style="margin:0;padding-left:20px;color:#465163;">${buildMenuHtml()}</ul>
+      <p style="margin:24px 0 10px;color:#465163;"><strong>Annulation :</strong> nos menus sont préparés sur mesure à partir de produits frais et locaux. Les annulations sont possibles uniquement jusqu’à 48 heures avant le dîner.</p>
       <p style="margin:24px 0 0;">
         <a href="${escapeHtml(cancellationUrl)}" style="display:inline-block;padding:12px 16px;border-radius:7px;background:#111827;color:#ffffff;font-weight:700;text-decoration:none;">Annuler ma réservation</a>
       </p>
@@ -223,6 +356,56 @@ export async function sendReservationConfirmedEmail(
     text,
     html,
   });
+}
+
+export async function sendReservationCancellationEmail(reservation: PaymentReservationEmailData) {
+  const text = [
+    'Réservation annulée', '',
+    'Votre réservation a bien été annulée et vos places ont été libérées.',
+    reservation.paymentAmountCents ? `Votre remboursement de ${formatMoneyCents(reservation.paymentAmountCents)} va être traité manuellement.` : '',
+    '', 'Récapitulatif', buildSummaryText(reservation),
+  ].filter(Boolean).join('\n');
+  const html = wrapHtml(
+    'Réservation annulée',
+    'Votre réservation a bien été annulée et vos places ont été libérées.',
+    `${buildSummaryHtml(reservation)}${reservation.paymentAmountCents ? `<p style="margin:0;color:#465163;">Votre remboursement de <strong>${formatMoneyCents(reservation.paymentAmountCents)}</strong> va être traité manuellement.</p>` : ''}`,
+  );
+  await sendEmail({ to: reservation.email, subject: 'Votre réservation Zuru Zuru est annulée', text, html });
+}
+
+export async function sendAdminRefundRequiredEmail(reservation: PaymentReservationEmailData) {
+  const amount = formatMoneyCents(reservation.paymentAmountCents);
+  const paymentId = String(reservation.helloAssoPaymentId || 'non renseigné');
+  const text = [
+    'Remboursement HelloAsso à effectuer', '',
+    `Nom : ${getFullName(reservation)}`, `Email : ${reservation.email}`,
+    `Montant : ${amount}`, `Identifiant paiement HelloAsso : ${paymentId}`,
+    `Places : ${reservation.seats}`, `Date : ${formatLongDate(reservation.serviceDate)}`,
+  ].join('\n');
+  const html = wrapHtml(
+    'Remboursement à effectuer',
+    'Une réservation payée vient d’être annulée dans le délai autorisé.',
+    `<div style="padding:16px;border:1px solid #d7dee8;border-radius:8px;background:#f8fafc;">
+      <p><strong>Nom :</strong> ${escapeHtml(getFullName(reservation))}</p>
+      <p><strong>Email :</strong> ${escapeHtml(reservation.email)}</p>
+      <p><strong>Montant :</strong> ${amount}</p>
+      <p><strong>Paiement HelloAsso :</strong> ${escapeHtml(paymentId)}</p>
+      <p><strong>Places :</strong> ${reservation.seats}</p>
+      <p><strong>Date :</strong> ${formatLongDate(reservation.serviceDate)}</p>
+    </div>`,
+  );
+  await sendEmail({ to: ADMIN_RESERVATION_EMAIL, subject: `Remboursement HelloAsso à effectuer – ${amount}`, text, html, replyTo: reservation.email });
+}
+
+export async function sendAdminPaymentConflictEmail(reservation: any, reason: string) {
+  const data: ReservationEmailData = {
+    firstName: reservation.first_name || '', lastName: reservation.last_name || '',
+    email: reservation.email, phone: reservation.phone, seats: reservation.seats,
+    serviceDate: reservation.service_date,
+  };
+  const text = ['Conflit de paiement HelloAsso', '', reason, '', buildSummaryText(data)].join('\n');
+  const html = wrapHtml('Paiement HelloAsso à vérifier', reason, buildSummaryHtml(data));
+  await sendEmail({ to: ADMIN_RESERVATION_EMAIL, subject: 'Paiement HelloAsso à vérifier', text, html, replyTo: data.email });
 }
 
 export async function sendAdminReservationConfirmedEmail(reservation: ReservationEmailData) {
@@ -329,15 +512,24 @@ export async function sendReservationSummaryEmail(
   });
 }
 
-export async function sendReservationFeedbackEmail(
+export function buildReservationFeedbackEmail(
   reservation: ReservationEmailData,
   googleReviewUrl: string,
+  {
+    testLabel,
+    logoUrl = 'https://lareserve.zuruzuru.fr/zuru-logo-email.png',
+  }: { testLabel?: string; logoUrl?: string } = {},
 ) {
   const firstName = reservation.firstName.trim();
   const greeting = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
   const reviewUrl = googleReviewUrl.trim();
+  const testText = testLabel ? [`[EMAIL TEST – ${testLabel}]`, ''] : [];
+  const testHtml = testLabel
+    ? `<div style="margin:0 0 20px;padding:12px;border:2px solid #d97706;background:#fffbeb;color:#92400e;font-weight:700;text-align:center;">EMAIL TEST – ${escapeHtml(testLabel)}</div>`
+    : '';
 
   const text = [
+    ...testText,
     greeting,
     '',
     `Merci encore pour votre présence à notre table du ${formatLongDate(reservation.serviceDate)}.`,
@@ -354,6 +546,7 @@ export async function sendReservationFeedbackEmail(
     'Alors, ce repas ?',
     `Merci encore pour votre présence à notre table du ${formatLongDate(reservation.serviceDate)}.`,
     `
+      ${testHtml}
       <p style="margin:0 0 16px;color:#465163;">
         On aimerait beaucoup savoir ce que vous avez pensé du repas. Vous pouvez répondre directement à cet email, on lit tout.
       </p>
@@ -365,12 +558,25 @@ export async function sendReservationFeedbackEmail(
       </p>
       ${buildSummaryHtml(reservation)}
     `,
+    { headerLogoUrl: logoUrl },
   );
 
-  await sendEmail({
-    to: reservation.email,
-    subject: 'Votre avis sur le repas Zuru Zuru ?',
+  return {
+    subject: testLabel ? '[TEST] Votre avis sur le repas Zuru Zuru ?' : 'Votre avis sur le repas Zuru Zuru ?',
     text,
     html,
+  };
+}
+
+export async function sendReservationFeedbackEmail(
+  reservation: ReservationEmailData,
+  googleReviewUrl: string,
+  options: { testLabel?: string; logoUrl?: string } = {},
+) {
+  const message = buildReservationFeedbackEmail(reservation, googleReviewUrl, options);
+
+  return await sendEmail({
+    to: reservation.email,
+    ...message,
   });
 }

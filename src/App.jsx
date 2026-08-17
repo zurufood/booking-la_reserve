@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
+  CreditCard,
+  Copy,
   Edit3,
+  Instagram,
   LogIn,
   LogOut,
   Mail,
@@ -11,12 +14,13 @@ import {
   RefreshCw,
   Save,
   Search,
+  Send,
   ShieldCheck,
   Trash2,
   UsersRound,
   XCircle,
 } from 'lucide-react';
-import { MAX_SEATS } from './lib/config';
+import { MAX_SEATS, PRICE_PER_SEAT_CENTS, PUBLIC_PAGE_MODE } from './lib/config';
 import {
   NEXT_SERVICE_DATE,
   formatDate,
@@ -33,11 +37,19 @@ import {
   createPublicReservation,
   deleteAdminReservation,
   fetchPublicAvailability,
+  fetchReservationPaymentLink,
   fetchReservations,
+  generateReservationPaymentLink,
   getValidationStatusLabel,
+  getPaymentStatusLabel,
   isReservationHoldingSeats,
+  markReservationRefunded,
+  manageSupperClubCampaign,
+  paymentStatusOptions,
   previewReservationCancellation,
+  reconcileHelloAssoPayment,
   resendReservationSummary,
+  startReservationPayment,
   updateAdminReservation,
   validationStatusOptions,
 } from './lib/reservations';
@@ -50,6 +62,12 @@ const PRESCREEN_DURATION_MS = 5000;
 const PRESCREEN_FADE_MS = 900;
 const PRESCREEN_IMAGE_SRC = '/affiche-preview.jpg';
 const PRESCREEN_STORAGE_KEY = 'zuru-prescreen-seen-v1';
+
+function formatMoneyCents(value) {
+  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(
+    Number(value || 0) / 100,
+  );
+}
 
 const emptySignupForm = {
   firstName: '',
@@ -92,6 +110,8 @@ function getRoute() {
   if (window.location.pathname.startsWith('/admin')) return 'admin';
   if (window.location.pathname.startsWith('/validation')) return 'validation';
   if (window.location.pathname.startsWith('/annulation')) return 'cancellation';
+  if (window.location.pathname.startsWith('/paiement')) return 'payment';
+  if (window.location.pathname.startsWith('/reglement')) return 'paymentLink';
   return 'signup';
 }
 
@@ -110,7 +130,115 @@ function App() {
   if (route === 'admin') return <AdminPage />;
   if (route === 'validation') return <ValidationPage />;
   if (route === 'cancellation') return <CancellationPage />;
-  return <SignupPage />;
+  if (route === 'payment') return <PaymentPage />;
+  if (route === 'paymentLink') return <ReservationPaymentPage />;
+  return PUBLIC_PAGE_MODE === 'waiting' ? <WaitingPage /> : <SignupPage />;
+}
+
+function ReservationPaymentPage() {
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const [error, setError] = useState('');
+  const token = new URLSearchParams(window.location.search).get('token') || '';
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+
+    async function loadPaymentLink() {
+      if (!token) {
+        setError('Lien de paiement invalide.');
+        setLoading(false);
+        return;
+      }
+      try {
+        const nextResult = await fetchReservationPaymentLink({ token });
+        if (!cancelled) setResult(nextResult);
+      } catch (loadError) {
+        if (!cancelled) setError(loadError.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadPaymentLink();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  async function handlePayment() {
+    setPaying(true);
+    setError('');
+    try {
+      const checkout = await startReservationPayment({ token });
+      if (checkout?.status === 'paid') {
+        setResult(checkout);
+        return;
+      }
+      if (!checkout?.checkoutUrl) throw new Error('Le paiement HelloAsso est indisponible.');
+      window.location.assign(checkout.checkoutUrl);
+    } catch (paymentError) {
+      setError(paymentError.message);
+      setPaying(false);
+    }
+  }
+
+  if (!isSupabaseConfigured) return <ConfigNotice mode="signup" />;
+  const reservation = result?.reservation;
+  const isPaid = ['paid', 'refund_pending', 'refunded'].includes(result?.status);
+
+  return (
+    <main className="center-shell payment-link-shell">
+      <div className="validation-page-content payment-link-content">
+        <img className="validation-logo" src="/zuru-logo-v2.svg" alt="Zuru Zuru Supper Club" />
+        <section className="setup-panel validation-panel payment-link-panel">
+          {loading ? (
+            <>
+              <RefreshCw className="spin-icon" size={34} aria-hidden="true" />
+              <h1>Chargement du règlement</h1>
+              <p>Nous retrouvons votre réservation.</p>
+            </>
+          ) : error && !reservation ? (
+            <>
+              <XCircle size={34} aria-hidden="true" />
+              <h1>Lien indisponible</h1>
+              <p>{error}</p>
+            </>
+          ) : isPaid ? (
+            <>
+              <CheckCircle2 size={34} aria-hidden="true" />
+              <h1>Réservation déjà réglée</h1>
+              <p>Merci, le paiement de cette réservation a bien été enregistré.</p>
+            </>
+          ) : (
+            <>
+              <p className="payment-link-eyebrow">Règlement de votre réservation</p>
+              <h1>{reservation?.fullName}</h1>
+              <div className="payment-link-summary">
+                <div>
+                  <span>Date du dîner</span>
+                  <strong>{reservation && formatLongDate(reservation.serviceDate)}</strong>
+                </div>
+                <div>
+                  <span>Nombre de places</span>
+                  <strong>{reservation?.seats} place{reservation?.seats > 1 ? 's' : ''}</strong>
+                </div>
+                <div className="payment-link-total">
+                  <span>Montant total</span>
+                  <strong>{formatMoneyCents(reservation?.amountCents)}</strong>
+                </div>
+              </div>
+              {error && <div className="alert error-alert">{error}</div>}
+              <button className="primary-button payment-link-button" type="button" onClick={handlePayment} disabled={paying}>
+                <span>{paying ? 'Préparation du paiement...' : `Payer ${formatMoneyCents(reservation?.amountCents)}`}</span>
+              </button>
+              <p className="payment-link-note">Paiement sécurisé sur la plateforme HelloAsso.</p>
+            </>
+          )}
+        </section>
+      </div>
+    </main>
+  );
 }
 
 function ConfigNotice({ mode }) {
@@ -127,6 +255,60 @@ function ConfigNotice({ mode }) {
 VITE_SUPABASE_ANON_KEY=...`}</pre>
         <span>{mode === 'admin' ? 'Le dashboard sera disponible après connexion admin.' : 'La page publique sera active après connexion à la base.'}</span>
       </section>
+    </main>
+  );
+}
+
+function WaitingPage() {
+  return (
+    <main className="public-shell public-shell-transition waiting-page is-visible">
+      <section className="public-header">
+        <div className="public-title-block">
+          <div className="brand-date-lockup">
+            <img className="zuru-logo" src="/zuru-logo-v2.svg" alt="Zuru Zuru Supper Club" />
+            <span className="brand-date-separator" aria-hidden="true" />
+            <span className="event-date" aria-label="Prochain dîner bientôt annoncé">
+              SOON
+            </span>
+          </div>
+          <p className="lead">
+            Une table, des produits locaux, des ingrédients de saison, des vins choisis avec soin,
+            des conversations qui rapprochent.
+          </p>
+          <p className="menu-summary waiting-menu-summary">
+            <strong>Menu de saison 32€</strong>
+            <br />
+            <strong className="menu-summary-details">
+              2 amuse-bouche, 2 entrées, 1 plat, 1 dessert
+            </strong>
+          </p>
+          <a
+            className="waiting-instagram-link"
+            href="https://www.instagram.com/zuruzuru_supperclub/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Instagram size={19} aria-hidden="true" />
+            <span>@zuruzuru_supperclub</span>
+          </a>
+        </div>
+      </section>
+
+      <div className="public-grid">
+        <section className="location-panel" aria-label="Lieu">
+          <div className="partner-logos">
+            <div className="partner-location">
+              <img src="/microwinnerie.png" alt="La Microwinnerie" />
+              <address>
+                87 Quai des Queyries
+                <br />
+                33100 Bordeaux
+              </address>
+            </div>
+            <img src="/darwin.png" alt="Darwin" />
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
@@ -194,6 +376,7 @@ function SignupPage() {
   const selectedAvailability = availability.find((item) => item.date === NEXT_SERVICE_DATE);
   const remainingSeats = selectedAvailability?.remainingSeats ?? 0;
   const requestedSeats = Number(form.seats) || 0;
+  const paymentTotalCents = requestedSeats * PRICE_PER_SEAT_CENTS;
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -262,9 +445,10 @@ function SignupPage() {
         setResendSummaryMessage('');
         return;
       }
-
-      setReceipt(reservation);
-      await loadAvailability();
+      if (!reservation?.checkoutUrl) {
+        throw new Error('Le lien de paiement HelloAsso est indisponible. Merci de réessayer.');
+      }
+      window.location.assign(reservation.checkoutUrl);
     } catch (error) {
       setErrors({ form: error.message });
     } finally {
@@ -356,12 +540,12 @@ function SignupPage() {
             Une table, des produits locaux, des ingrédients de saison, des vins choisis avec soin,
             des conversations qui rapprochent.
           </p>
-          <p className="menu-timing">
-            <span>Apéritif à partir de 18:00</span>
-            <span className="menu-timing-separator" aria-hidden="true">
-              /
+          <p className="menu-summary">
+            Menu de saison 28€
+            <br />
+            <span className="menu-summary-details">
+              2 amuse-bouche, 2 entrées, 1 plat, 1 dessert
             </span>
-            <span>Début du dîner à 20:30</span>
           </p>
         </div>
       </section>
@@ -443,14 +627,12 @@ function SignupPage() {
                   <h2 className="reservation-title" id="signup-title">
                     <span className="reservation-title-text">Réservations</span>
                   </h2>
-                  <p className="menu-summary">
-                    Menu de saison 28€
-                    <br />
-                    <span className="menu-summary-details">
-                      2 amuse-bouche, 2 entrées, 1 plat, 1 dessert
-                      <br />
-                      Règlement sur place
+                  <p className="menu-timing">
+                    <span>Apéritif à partir de 18:00</span>
+                    <span className="menu-timing-separator" aria-hidden="true">
+                      /
                     </span>
+                    <span>Début du dîner à 20:30</span>
                   </p>
                 </div>
               </div>
@@ -516,6 +698,12 @@ function SignupPage() {
                   {errors.seats && <small>{errors.seats}</small>}
                 </label>
 
+                <div className="payment-summary field-full">
+                  <CreditCard size={20} aria-hidden="true" />
+                  <span>Total à payer</span>
+                  <strong>{formatMoneyCents(paymentTotalCents)}</strong>
+                </div>
+
                 {errors.form && <div className="alert error-alert field-full">{errors.form}</div>}
 
                 <button
@@ -523,9 +711,14 @@ function SignupPage() {
                   type="submit"
                   disabled={submitting || loading}
                 >
-                  <CheckCircle2 size={18} />
-                  <span>{submitting ? 'Enregistrement...' : 'Valider ma réservation'}</span>
+                  <CreditCard size={18} />
+                  <span>{submitting ? 'Préparation du paiement...' : `Payer ${formatMoneyCents(paymentTotalCents)}`}</span>
                 </button>
+
+                <p className="signup-cancellation-note field-full">
+                  Nos menus sont préparés sur mesure à partir de produits frais et locaux. Les
+                  annulations sont possibles uniquement jusqu’à 48 heures avant le dîner.
+                </p>
               </form>
             </>
           )}
@@ -547,6 +740,93 @@ function SignupPage() {
       </div>
     </main>
     </>
+  );
+}
+
+function PaymentPage() {
+  const [result, setResult] = useState({ status: 'checking' });
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return undefined;
+    let cancelled = false;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || '';
+    const checkoutIntentId = params.get('checkoutIntentId') || '';
+    const returnedWithError = params.get('type') === 'error';
+
+    async function checkPayment() {
+      if (!token) {
+        setResult({ status: 'failed', message: 'Retour de paiement invalide.' });
+        return;
+      }
+      for (let attempt = 0; attempt < 7 && !cancelled; attempt += 1) {
+        try {
+          const nextResult = await reconcileHelloAssoPayment({ token, checkoutIntentId });
+          if (cancelled) return;
+          setResult(nextResult || { status: 'pending' });
+          if (nextResult?.status !== 'pending') return;
+          if (returnedWithError) {
+            setResult({ status: 'failed', message: 'HelloAsso signale une erreur et aucun paiement confirmé n’a été trouvé.' });
+            return;
+          }
+        } catch (paymentError) {
+          if (!cancelled) setError(paymentError.message);
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      }
+      if (!cancelled) setResult({ status: 'delayed' });
+    }
+    checkPayment();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!isSupabaseConfigured) return <ConfigNotice mode="signup" />;
+  const status = result?.status;
+  const paid = status === 'paid';
+  const pending = status === 'checking' || status === 'pending';
+  const conflict = status === 'conflict';
+  const title = paid
+    ? 'Paiement confirmé'
+    : pending
+      ? 'Confirmation du paiement'
+      : conflict
+        ? 'Paiement à vérifier'
+        : status === 'delayed'
+          ? 'Confirmation en attente'
+        : 'Paiement non confirmé';
+
+  return (
+    <main className="center-shell">
+      <div className="validation-page-content">
+        <img className="validation-logo" src="/zuru-logo-v2.svg" alt="Zuru Zuru Supper Club" />
+        <section className="setup-panel validation-panel">
+          {paid ? <CheckCircle2 size={34} aria-hidden="true" /> : pending ? <RefreshCw size={34} aria-hidden="true" /> : <XCircle size={34} aria-hidden="true" />}
+          <h1>{title}</h1>
+          {error ? (
+            <p>{error}</p>
+          ) : paid ? (
+            <p>Votre réservation est confirmée. Un email récapitulatif vient de vous être envoyé.</p>
+          ) : pending ? (
+            <p>Nous vérifions la confirmation auprès de HelloAsso. Cette opération peut prendre quelques secondes.</p>
+          ) : conflict ? (
+            <p>Votre paiement a été reçu mais nécessite une vérification. L’équipe a été prévenue et vous contactera.</p>
+          ) : status === 'delayed' ? (
+            <p>La confirmation prend plus de temps que prévu. Ne payez pas une seconde fois : vous recevrez un email dès que HelloAsso aura confirmé le paiement.</p>
+          ) : (
+            <p>{result?.message || 'Le paiement n’a pas été confirmé. Vous pouvez reprendre votre réservation.'}</p>
+          )}
+          {result?.reservation && (
+            <div className="validation-summary">
+              <strong>{result.reservation.seats} place{result.reservation.seats > 1 ? 's' : ''} · {formatMoneyCents(result.reservation.amountCents)}</strong>
+              <span>{formatLongDate(result.reservation.serviceDate)}</span>
+            </div>
+          )}
+          {!pending && <a className="primary-button" href="/inscription">{paid || status === 'delayed' || conflict ? 'Retour au site' : 'Reprendre ma réservation'}</a>}
+        </section>
+      </div>
+    </main>
   );
 }
 
@@ -702,12 +982,15 @@ function CancellationPage() {
   const isReady = status === 'ready';
   const isCancelled = status === 'cancelled';
   const isInvalid = status === 'invalid';
+  const isCutoff = status === 'cutoff';
   const title = loading
     ? 'Chargement en cours'
     : isCancelled
       ? 'Réservation annulée'
       : isReady
         ? 'Annuler ma réservation'
+        : isCutoff
+          ? 'Délai d’annulation dépassé'
         : 'Annulation impossible';
 
   return (
@@ -741,6 +1024,10 @@ function CancellationPage() {
           )}
           {isReady && (
             <div className="validation-actions">
+              <p className="cancellation-warning">
+                Nos menus sont préparés sur mesure à partir de produits frais et locaux. Les
+                annulations sont possibles uniquement jusqu’à 48 heures avant le dîner.
+              </p>
               <button
                 className="primary-button"
                 type="button"
@@ -762,6 +1049,11 @@ function CancellationPage() {
           {isInvalid && (
             <a className="primary-button" href="/inscription">
               Refaire une inscription
+            </a>
+          )}
+          {isCutoff && (
+            <a className="primary-button" href="/inscription">
+              Retour au site
             </a>
           )}
         </section>
@@ -863,17 +1155,78 @@ function AdminLogin() {
   );
 }
 
+function CampaignGroup({ title, description, recipients, action, onSendOne, canSend, excluded = false }) {
+  return (
+    <article className={`campaign-group${excluded ? ' is-excluded' : ''}`}>
+      <header>
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+        <strong>{recipients.length}</strong>
+      </header>
+      <div className="campaign-recipient-list">
+        {recipients.length === 0 ? (
+          <p className="campaign-empty">Aucun destinataire</p>
+        ) : recipients.map((recipient) => (
+          <div className="campaign-recipient" key={recipient.reservationId}>
+            <div>
+              <strong>{recipient.fullName}</strong>
+              <span>{recipient.email} · {recipient.seats} place{recipient.seats > 1 ? 's' : ''}</span>
+              {excluded && <small>{recipient.reason}</small>}
+              {recipient.delivery?.status === 'sent' && (
+                <small className="campaign-delivery-success">Envoyé le {formatDateTime(recipient.delivery.sentAt)}</small>
+              )}
+              {recipient.delivery?.status === 'failed' && (
+                <small className="campaign-delivery-error">Échec : {recipient.delivery.error}</small>
+              )}
+              {recipient.delivery?.status === 'sending' && <small>Envoi en cours…</small>}
+            </div>
+            {!excluded && recipient.delivery?.status !== 'sending' && (
+              <button
+                className="secondary-button campaign-resend-button"
+                type="button"
+                onClick={() => onSendOne(recipient)}
+                disabled={Boolean(action) || !canSend}
+              >
+                {action === recipient.reservationId
+                  ? 'Envoi…'
+                  : recipient.delivery?.status === 'sent'
+                    ? 'Renvoyer'
+                    : recipient.delivery?.status === 'failed'
+                      ? 'Réessayer'
+                      : 'Envoyer'}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function AdminDashboard({ userEmail }) {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('tous');
+  const [paymentFilter, setPaymentFilter] = useState('tous');
   const [dateFilter, setDateFilter] = useState(NEXT_SERVICE_DATE);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyAdminForm);
   const [formErrors, setFormErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [paymentLinks, setPaymentLinks] = useState({});
+  const [generatingPaymentLinkId, setGeneratingPaymentLinkId] = useState(null);
+  const [copiedPaymentLinkId, setCopiedPaymentLinkId] = useState(null);
+  const [campaign, setCampaign] = useState(null);
+  const [campaignLoading, setCampaignLoading] = useState(true);
+  const [campaignAction, setCampaignAction] = useState('');
+  const [campaignError, setCampaignError] = useState('');
+  const [campaignMessage, setCampaignMessage] = useState('');
+  const [campaignTestsSent, setCampaignTestsSent] = useState(false);
+  const [campaignTestResults, setCampaignTestResults] = useState([]);
 
   async function loadReservations() {
     setLoading(true);
@@ -891,6 +1244,22 @@ function AdminDashboard({ userEmail }) {
 
   useEffect(() => {
     loadReservations();
+  }, []);
+
+  async function loadCampaignPreview() {
+    setCampaignLoading(true);
+    setCampaignError('');
+    try {
+      setCampaign(await manageSupperClubCampaign('preview'));
+    } catch (previewError) {
+      setCampaignError(previewError.message);
+    } finally {
+      setCampaignLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCampaignPreview();
   }, []);
 
   const serviceDates = useMemo(
@@ -927,11 +1296,13 @@ function AdminDashboard({ userEmail }) {
         const matchesDate = !dateFilter || reservation.date === dateFilter;
         const matchesStatus =
           statusFilter === 'tous' || reservation.effectiveValidationStatus === statusFilter;
+        const matchesPayment =
+          paymentFilter === 'tous' || reservation.paymentStatus === paymentFilter;
 
-        return matchesQuery && matchesDate && matchesStatus;
+        return matchesQuery && matchesDate && matchesStatus && matchesPayment;
       })
       .sort((a, b) => `${a.date}-${a.createdAt}`.localeCompare(`${b.date}-${b.createdAt}`));
-  }, [dateFilter, query, reservations, statusFilter]);
+  }, [dateFilter, paymentFilter, query, reservations, statusFilter]);
 
   const stats = useMemo(() => {
     const visibleReservations = reservations.filter((reservation) => reservation.date === dateFilter);
@@ -943,11 +1314,15 @@ function AdminDashboard({ userEmail }) {
     const pendingCount = visibleReservations.filter(
       (reservation) => reservation.effectiveValidationStatus === 'pending',
     ).length;
+    const refundPendingCount = visibleReservations.filter(
+      (reservation) => reservation.paymentStatus === 'refund_pending',
+    ).length;
 
     return {
       reservationCount: visibleReservations.length,
       bookedSeats,
       pendingCount,
+      refundPendingCount,
       remainingSeats: Math.max(0, MAX_SEATS - bookedSeats),
     };
   }, [dateFilter, reservations]);
@@ -1069,6 +1444,135 @@ function AdminDashboard({ userEmail }) {
     }
   }
 
+  async function markRefunded(id) {
+    if (!window.confirm('Confirmer que ce paiement a été remboursé dans HelloAsso ?')) return;
+    try {
+      const updated = await markReservationRefunded(id);
+      setReservations((current) => current.map((reservation) => reservation.id === id ? updated : reservation));
+    } catch (refundError) {
+      setError(refundError.message);
+    }
+  }
+
+  async function generatePaymentLink(reservation) {
+    if (
+      reservation.hasPaymentLink &&
+      !window.confirm("Créer un nouveau lien ? L’ancien lien ne fonctionnera plus.")
+    ) {
+      return;
+    }
+
+    setGeneratingPaymentLinkId(reservation.id);
+    setError('');
+    try {
+      const generated = await generateReservationPaymentLink(reservation.id);
+      setPaymentLinks((current) => ({ ...current, [reservation.id]: generated.paymentUrl }));
+      setReservations((current) => current.map((item) => (
+        item.id === reservation.id
+          ? { ...item, hasPaymentLink: true, paymentLinkCreatedAt: generated.createdAt, paymentAmountCents: generated.amountCents }
+          : item
+      )));
+      try {
+        await navigator.clipboard.writeText(generated.paymentUrl);
+        setCopiedPaymentLinkId(reservation.id);
+        window.setTimeout(() => setCopiedPaymentLinkId((current) => (
+          current === reservation.id ? null : current
+        )), 2000);
+      } catch {
+        // The generated URL remains visible and can be copied manually.
+      }
+    } catch (linkError) {
+      setError(linkError.message);
+    } finally {
+      setGeneratingPaymentLinkId(null);
+    }
+  }
+
+  async function copyPaymentLink(reservationId) {
+    const paymentUrl = paymentLinks[reservationId];
+    if (!paymentUrl) return;
+    try {
+      await navigator.clipboard.writeText(paymentUrl);
+      setCopiedPaymentLinkId(reservationId);
+      window.setTimeout(() => setCopiedPaymentLinkId((current) => (
+        current === reservationId ? null : current
+      )), 2000);
+    } catch {
+      setError('Copie automatique impossible. Sélectionnez le lien puis copiez-le.');
+    }
+  }
+
+  async function copyOrCreatePaymentLink(reservation) {
+    if (paymentLinks[reservation.id]) {
+      await copyPaymentLink(reservation.id);
+      return;
+    }
+
+    await generatePaymentLink(reservation);
+  }
+
+  async function sendCampaignTests() {
+    setCampaignAction('test');
+    setCampaignError('');
+    setCampaignMessage('');
+    try {
+      const result = await manageSupperClubCampaign('test');
+      setCampaignTestResults(result.results || []);
+      setCampaignTestsSent(Boolean(result.testSent));
+      if (result.testSent) {
+        setCampaignMessage(`Deux emails tests ont été acceptés par Resend pour ${result.recipient}.`);
+      } else {
+        setCampaignError(`Seulement ${result.count || 0} email test sur 2 a été accepté par Resend.`);
+      }
+    } catch (testError) {
+      setCampaignError(testError.message);
+    } finally {
+      setCampaignAction('');
+    }
+  }
+
+  async function sendCampaign() {
+    const pendingCount = [...(campaign?.paid || []), ...(campaign?.unpaid || [])]
+      .filter((recipient) => recipient.delivery?.status !== 'sent').length;
+    if (!window.confirm(`Envoyer maintenant la campagne à ${pendingCount} destinataire${pendingCount > 1 ? 's' : ''} ?`)) return;
+
+    setCampaignAction('send');
+    setCampaignError('');
+    setCampaignMessage('');
+    try {
+      const result = await manageSupperClubCampaign('send', { confirm: true });
+      const sentCount = (result.results || []).filter((item) => item.sentAt).length;
+      const failedCount = (result.results || []).filter((item) => item.error).length;
+      setCampaignMessage(`${sentCount} email${sentCount > 1 ? 's' : ''} envoyé${sentCount > 1 ? 's' : ''}${failedCount ? `, ${failedCount} échec${failedCount > 1 ? 's' : ''}` : ''}.`);
+      await loadCampaignPreview();
+    } catch (sendError) {
+      setCampaignError(sendError.message);
+    } finally {
+      setCampaignAction('');
+    }
+  }
+
+  async function sendCampaignEmailToOne(recipient) {
+    const verb = recipient.delivery?.status === 'sent' ? 'Renvoyer' : 'Envoyer';
+    if (!window.confirm(`${verb} cet email uniquement à ${recipient.email} ?`)) return;
+    setCampaignAction(recipient.reservationId);
+    setCampaignError('');
+    setCampaignMessage('');
+    try {
+      const response = await manageSupperClubCampaign('send-one', {
+        confirm: true,
+        reservationId: recipient.reservationId,
+      });
+      if (response.result?.error) throw new Error(response.result.error);
+      setCampaignMessage(`Email envoyé uniquement à ${recipient.email}.`);
+      await loadCampaignPreview();
+    } catch (resendError) {
+      setCampaignError(resendError.message);
+    } finally {
+      setCampaignAction('');
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
   }
@@ -1118,10 +1622,10 @@ function AdminDashboard({ userEmail }) {
           </div>
         </article>
         <article className="metric metric-amber">
-          <Mail size={22} aria-hidden="true" />
+          <CreditCard size={22} aria-hidden="true" />
           <div>
-            <span>En attente</span>
-            <strong>{stats.pendingCount}</strong>
+            <span>À rembourser</span>
+            <strong>{stats.refundPendingCount}</strong>
           </div>
         </article>
         <article className="metric metric-ink">
@@ -1131,6 +1635,84 @@ function AdminDashboard({ userEmail }) {
             <strong>{stats.remainingSeats}</strong>
           </div>
         </article>
+      </section>
+
+      <section className="panel campaign-panel" aria-labelledby="campaign-title">
+        <div className="panel-heading campaign-heading">
+          <div>
+            <p className="eyebrow">Email du 16 juillet</p>
+            <h2 id="campaign-title">À demain pour notre premier Supper Club !</h2>
+          </div>
+          <button className="secondary-button" type="button" onClick={loadCampaignPreview} disabled={campaignLoading || Boolean(campaignAction)}>
+            <RefreshCw size={17} />
+            Actualiser l’aperçu
+          </button>
+        </div>
+
+        {campaignError && <div className="alert error-alert campaign-alert">{campaignError}</div>}
+        {campaignMessage && <div className="alert info-alert campaign-alert">{campaignMessage}</div>}
+
+        {campaignLoading ? (
+          <div className="campaign-loading">Vérification des destinataires et des paiements HelloAsso…</div>
+        ) : campaign ? (
+          <>
+            <div className="campaign-groups">
+              <CampaignGroup
+                title="Déjà payés"
+                description="Email sans mention du paiement"
+                recipients={campaign.paid}
+                action={campaignAction}
+                onSendOne={sendCampaignEmailToOne}
+                canSend={campaignTestsSent}
+              />
+              <CampaignGroup
+                title="Non payés"
+                description="Email avec un nouveau lien individuel de règlement"
+                recipients={campaign.unpaid}
+                action={campaignAction}
+                onSendOne={sendCampaignEmailToOne}
+                canSend={campaignTestsSent}
+              />
+              <CampaignGroup
+                title="Exclus"
+                description="Aucun email ne sera envoyé"
+                recipients={campaign.excluded}
+                excluded
+              />
+            </div>
+            {campaign.reconciliationWarnings?.length > 0 && (
+              <div className="alert error-alert campaign-alert">
+                {campaign.reconciliationWarnings.length} paiement en attente n’a pas pu être revérifié auprès de HelloAsso.
+              </div>
+            )}
+            <div className="campaign-actions">
+              <button className="secondary-button" type="button" onClick={sendCampaignTests} disabled={Boolean(campaignAction)}>
+                <Mail size={17} />
+                {campaignAction === 'test' ? 'Envoi des tests…' : `Envoyer les 2 tests à ${userEmail}`}
+              </button>
+              <button className="primary-button" type="button" onClick={sendCampaign} disabled={!campaignTestsSent || Boolean(campaignAction)}>
+                <Send size={17} />
+                {campaignAction === 'send' ? 'Envoi en cours…' : 'Confirmer l’envoi aux invités'}
+              </button>
+            </div>
+            {campaignTestResults.length > 0 && (
+              <div className="campaign-test-results" aria-live="polite">
+                <strong>Résultat des emails tests</strong>
+                {campaignTestResults.map((result) => (
+                  <div className={result.accepted ? 'is-success' : 'is-error'} key={result.variant}>
+                    <span>{result.label}</span>
+                    <span>
+                      {result.accepted
+                        ? `Resend : ${result.status} · ${result.emailId}`
+                        : result.error}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!campaignTestsSent && <p className="campaign-lock-note">Envoyez et vérifiez d’abord les deux emails tests pour activer l’envoi réel.</p>}
+          </>
+        ) : null}
       </section>
 
       {error && (
@@ -1277,6 +1859,14 @@ function AdminDashboard({ userEmail }) {
                 ))}
               </select>
             </label>
+            <label className="field compact-field">
+              <span>Paiement</span>
+              <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)}>
+                {paymentStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="reservation-list">
@@ -1294,6 +1884,7 @@ function AdminDashboard({ userEmail }) {
                   [reservation.firstName, reservation.lastName].filter(Boolean).join(' ') ||
                   reservation.email;
                 const status = reservation.effectiveValidationStatus;
+                const financiallyLocked = ['paid', 'refund_pending', 'refunded', 'conflict'].includes(reservation.paymentStatus);
 
                 return (
                   <article className="reservation-card" key={reservation.id}>
@@ -1308,6 +1899,9 @@ function AdminDashboard({ userEmail }) {
                         <h3>{reservationName}</h3>
                         <span className={`status-pill status-${status}`}>
                           {getValidationStatusLabel(status)}
+                        </span>
+                        <span className={`status-pill payment-status-${reservation.paymentStatus}`}>
+                          {getPaymentStatusLabel(reservation.paymentStatus)}
                         </span>
                       </div>
                       <div className="reservation-meta">
@@ -1331,10 +1925,38 @@ function AdminDashboard({ userEmail }) {
                             Confirmée le {formatDateTime(reservation.confirmedAt)}
                           </span>
                         )}
+                        {reservation.paymentAmountCents != null && (
+                          <span><CreditCard size={15} aria-hidden="true" />{formatMoneyCents(reservation.paymentAmountCents)}</span>
+                        )}
+                        {reservation.helloAssoPaymentId && <span>HelloAsso #{reservation.helloAssoPaymentId}</span>}
+                        {reservation.paymentConflictReason && <span>{reservation.paymentConflictReason}</span>}
                       </div>
                     </div>
 
                     <div className="reservation-actions">
+                      {status === 'confirmed' && ['manual', 'failed', 'pending'].includes(reservation.paymentStatus) && (
+                        <button
+                          className="secondary-button payment-copy-admin-button"
+                          type="button"
+                          onClick={() => copyOrCreatePaymentLink(reservation)}
+                          disabled={generatingPaymentLinkId === reservation.id}
+                          aria-label={`Copier le lien de paiement de ${reservationName}`}
+                        >
+                          {copiedPaymentLinkId === reservation.id
+                            ? <CheckCircle2 size={16} aria-hidden="true" />
+                            : <Copy size={16} aria-hidden="true" />}
+                          {generatingPaymentLinkId === reservation.id
+                            ? 'Création...'
+                            : copiedPaymentLinkId === reservation.id
+                              ? 'Copié !'
+                              : 'Copier le lien de paiement'}
+                        </button>
+                      )}
+                      {reservation.paymentStatus === 'refund_pending' && (
+                        <button className="secondary-button" type="button" onClick={() => markRefunded(reservation.id)}>
+                          Marquer remboursé
+                        </button>
+                      )}
                       <button
                         className="icon-button"
                         type="button"
@@ -1343,15 +1965,29 @@ function AdminDashboard({ userEmail }) {
                       >
                         <Edit3 size={18} />
                       </button>
-                      <button
+                      {!financiallyLocked && <button
                         className="icon-button danger"
                         type="button"
                         onClick={() => removeReservation(reservation.id)}
                         aria-label={`Supprimer ${reservationName}`}
                       >
                         <Trash2 size={18} />
-                      </button>
+                      </button>}
                     </div>
+                    {paymentLinks[reservation.id] && (
+                      <div className="reservation-payment-link">
+                        <input
+                          aria-label={`Lien de paiement de ${reservationName}`}
+                          value={paymentLinks[reservation.id]}
+                          readOnly
+                          onFocus={(event) => event.currentTarget.select()}
+                        />
+                        <span>
+                          {copiedPaymentLinkId === reservation.id ? 'Lien copié. ' : 'Lien créé. '}
+                          Envoyez-le à la personne concernée.
+                        </span>
+                      </div>
+                    )}
                   </article>
                 );
               })

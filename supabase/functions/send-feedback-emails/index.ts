@@ -21,6 +21,8 @@ type SendFailure = SendResult & {
   error: string;
 };
 
+const TEST_RECIPIENT = 'zuruzurufood@gmail.com';
+
 function requireEnv(name: string) {
   const value = Deno.env.get(name);
   if (!value) {
@@ -90,14 +92,40 @@ Deno.serve(async (req) => {
     const today = getParisTodayISO();
     const force = payload.force === true;
     const dryRun = payload.dryRun === true;
+    const test = payload.test === true;
 
     if (!force && today < sendDate) {
       return errorResponse(`Relance prévue à partir du ${sendDate}.`, 425);
     }
 
+    const googleReviewUrl = requireEnv('GOOGLE_REVIEW_URL');
+
+    if (test) {
+      const result = await sendReservationFeedbackEmail(
+        {
+          firstName: 'Zuru Zuru',
+          lastName: '',
+          email: TEST_RECIPIENT,
+          phone: 'Non applicable (email test)',
+          seats: 1,
+          serviceDate,
+        },
+        googleReviewUrl,
+        { testLabel: 'AUCUN PARTICIPANT CONTACTÉ' },
+      );
+
+      return jsonResponse({
+        serviceDate,
+        test: true,
+        recipient: TEST_RECIPIENT,
+        emailId: result.id,
+        reservationsRead: false,
+        reservationsUpdated: false,
+      });
+    }
+
     const supabaseUrl = requireEnv('SUPABASE_URL');
     const serviceRoleKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
-    const googleReviewUrl = requireEnv('GOOGLE_REVIEW_URL');
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         persistSession: false,

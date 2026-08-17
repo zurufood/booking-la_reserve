@@ -12,3 +12,21 @@ verify_jwt = false
 
 [functions.send-feedback-emails]
 verify_jwt = false
+
+[functions.create-helloasso-checkout]
+verify_jwt = false
+
+[functions.reconcile-helloasso-payment]
+verify_jwt = false
+
+[functions.helloasso-webhook]
+verify_jwt = false
+
+[functions.manage-reservation-payment-link]
+verify_jwt = false
+
+[functions.reservation-payment-link]
+verify_jwt = false
+
+[functions.send-supper-club-campaign]
+verify_jwt = false

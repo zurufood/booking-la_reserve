@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.48.1';
 import { errorResponse, jsonResponse, textResponse } from '../_shared/http.ts';
+import {
+  sendAdminRefundRequiredEmail,
+  sendReservationCancellationEmail,
+} from '../_shared/reservation-email.ts';
 
 type ReservationRow = {
   id: string;
@@ -9,6 +13,10 @@ type ReservationRow = {
   email: string;
   seats: number;
   validation_status: string;
+  phone: string;
+  payment_status: string;
+  payment_amount_cents: number | null;
+  helloasso_payment_id: number | null;
 };
 
 type CancellationPayload = {
@@ -81,7 +89,7 @@ Deno.serve(async (req) => {
 
     const { data, error } = await supabase
       .from('reservations')
-      .select('id, service_date, first_name, last_name, email, seats, validation_status')
+      .select('id, service_date, first_name, last_name, email, phone, seats, validation_status, payment_status, payment_amount_cents, helloasso_payment_id')
       .eq('cancellation_token_hash', tokenHash)
       .maybeSingle();
 
@@ -106,27 +114,65 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!shouldCancel) {
+    const { data: deadline, error: deadlineError } = await supabase.rpc(
+      'reservation_cancellation_deadline',
+      { p_service_date: reservation.service_date },
+    );
+    if (deadlineError) return errorResponse(deadlineError.message, 500);
+    const cancellationDeadline = String(deadline);
+    if (new Date(cancellationDeadline).getTime() <= Date.now()) {
       return jsonResponse({
-        status: 'ready',
-        message: 'Confirmez-vous l’annulation de cette réservation ?',
+        status: 'cutoff',
+        message: 'Le délai d’annulation est dépassé. Nos menus sont préparés sur mesure à partir de produits frais et locaux ; les annulations sont possibles uniquement jusqu’à 48 heures avant le dîner.',
+        cancellationDeadline,
         reservation: reservationPayload(reservation),
       });
     }
 
-    const { error: deleteError } = await supabase
+    if (!shouldCancel) {
+      return jsonResponse({
+        status: 'ready',
+        message: 'Confirmez-vous l’annulation de cette réservation ? Les places seront libérées et le remboursement sera ensuite traité manuellement.',
+        cancellationDeadline,
+        reservation: reservationPayload(reservation),
+      });
+    }
+
+    const paidReservation = reservation.payment_status === 'paid';
+    const now = new Date().toISOString();
+    const { error: cancelError } = await supabase
       .from('reservations')
-      .delete()
+      .update({
+        validation_status: 'cancelled',
+        cancellation_token_hash: null,
+        payment_status: paidReservation ? 'refund_pending' : reservation.payment_status,
+        refund_requested_at: paidReservation ? now : null,
+      })
       .eq('id', reservation.id)
       .eq('cancellation_token_hash', tokenHash);
 
-    if (deleteError) {
-      return errorResponse(deleteError.message, 500);
+    if (cancelError) {
+      return errorResponse(cancelError.message, 500);
     }
+
+    const emailData = {
+      firstName: reservation.first_name,
+      lastName: reservation.last_name,
+      email: reservation.email,
+      phone: reservation.phone,
+      seats: reservation.seats,
+      serviceDate: reservation.service_date,
+      paymentAmountCents: paidReservation ? reservation.payment_amount_cents : null,
+      helloAssoPaymentId: reservation.helloasso_payment_id,
+    };
+    await sendReservationCancellationEmail(emailData).catch(console.error);
+    if (paidReservation) await sendAdminRefundRequiredEmail(emailData).catch(console.error);
 
     return jsonResponse({
       status: 'cancelled',
-      message: 'Votre réservation a bien été annulée.',
+      message: paidReservation
+        ? 'Votre réservation a bien été annulée. Vos places sont libérées et votre remboursement va être traité manuellement.'
+        : 'Votre réservation a bien été annulée.',
       reservation: reservationPayload(reservation),
     });
   } catch (error) {

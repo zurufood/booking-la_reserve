@@ -9,6 +9,22 @@ export const validationStatusOptions = [
   { value: 'cancelled', label: 'Annulée' },
 ];
 
+export const paymentStatusOptions = [
+  { value: 'tous', label: 'Tous les paiements' },
+  { value: 'pending', label: 'Paiement en attente' },
+  { value: 'paid', label: 'Payé' },
+  { value: 'refund_pending', label: 'Remboursement à effectuer' },
+  { value: 'refunded', label: 'Remboursé' },
+  { value: 'manual', label: 'Manuel' },
+  { value: 'failed', label: 'Échoué' },
+  { value: 'conflict', label: 'À vérifier' },
+];
+
+const paymentStatusLabels = Object.fromEntries(
+  paymentStatusOptions.filter((item) => item.value !== 'tous').map((item) => [item.value, item.label]),
+);
+export function getPaymentStatusLabel(status) { return paymentStatusLabels[status] ?? status; }
+
 const validationStatusLabels = {
   pending: 'En attente',
   confirmed: 'Confirmée',
@@ -31,6 +47,16 @@ const reservationSelect = [
   'validation_expires_at',
   'confirmed_at',
   'confirmation_email_sent_at',
+  'payment_status',
+  'payment_amount_cents',
+  'helloasso_order_id',
+  'helloasso_payment_id',
+  'payment_created_at',
+  'payment_paid_at',
+  'refund_requested_at',
+  'refunded_at',
+  'payment_conflict_reason',
+  'payment_link_created_at',
 ].join(', ');
 
 export function getEffectiveValidationStatus(reservation) {
@@ -70,6 +96,17 @@ export function mapReservation(row) {
     validationExpiresAt: row.validation_expires_at,
     confirmedAt: row.confirmed_at,
     confirmationEmailSentAt: row.confirmation_email_sent_at,
+    paymentStatus: row.payment_status || 'manual',
+    paymentAmountCents: row.payment_amount_cents == null ? null : Number(row.payment_amount_cents),
+    helloAssoOrderId: row.helloasso_order_id,
+    helloAssoPaymentId: row.helloasso_payment_id,
+    paymentCreatedAt: row.payment_created_at,
+    paymentPaidAt: row.payment_paid_at,
+    refundRequestedAt: row.refund_requested_at,
+    refundedAt: row.refunded_at,
+    paymentConflictReason: row.payment_conflict_reason,
+    paymentLinkCreatedAt: row.payment_link_created_at,
+    hasPaymentLink: Boolean(row.payment_link_created_at),
   };
 
   return {
@@ -136,7 +173,7 @@ export async function fetchPublicAvailability() {
 }
 
 export async function createPublicReservation({ firstName, lastName, email, phone, seats }) {
-  const { data, error } = await supabase.functions.invoke('create-reservation-request', {
+  const { data, error } = await supabase.functions.invoke('create-helloasso-checkout', {
     body: {
       date: NEXT_SERVICE_DATE,
       firstName: firstName.trim(),
@@ -155,6 +192,51 @@ export async function createPublicReservation({ firstName, lastName, email, phon
     throw new Error(data.error);
   }
 
+  return data || null;
+}
+
+export async function reconcileHelloAssoPayment({ token, checkoutIntentId }) {
+  const { data, error } = await supabase.functions.invoke('reconcile-helloasso-payment', {
+    body: { token, checkoutIntentId },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error));
+  if (data?.error) throw new Error(data.error);
+  return data || null;
+}
+
+export async function fetchReservationPaymentLink({ token }) {
+  const { data, error } = await supabase.functions.invoke('reservation-payment-link', {
+    body: { action: 'preview', token },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error));
+  if (data?.error) throw new Error(data.error);
+  return data || null;
+}
+
+export async function startReservationPayment({ token }) {
+  const { data, error } = await supabase.functions.invoke('reservation-payment-link', {
+    body: { action: 'checkout', token },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error));
+  if (data?.error) throw new Error(data.error);
+  return data || null;
+}
+
+export async function generateReservationPaymentLink(reservationId) {
+  const { data, error } = await supabase.functions.invoke('manage-reservation-payment-link', {
+    body: { reservationId },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error));
+  if (data?.error) throw new Error(data.error);
+  return data || null;
+}
+
+export async function manageSupperClubCampaign(action, options = {}) {
+  const { data, error } = await supabase.functions.invoke('send-supper-club-campaign', {
+    body: { action, ...options },
+  });
+  if (error) throw new Error(await getFunctionErrorMessage(error));
+  if (data?.error) throw new Error(data.error);
   return data || null;
 }
 
@@ -248,6 +330,8 @@ export async function createAdminReservation(values) {
       validation_expires_at: null,
       confirmed_at: new Date().toISOString(),
       confirmation_email_sent_at: null,
+      payment_status: 'manual',
+      payment_amount_cents: null,
     })
     .select(reservationSelect)
     .single();
@@ -273,4 +357,17 @@ export async function updateAdminReservation(id, values) {
 export async function deleteAdminReservation(id) {
   const { error } = await supabase.from('reservations').delete().eq('id', id);
   throwIfError(error);
+}
+
+
+export async function markReservationRefunded(id) {
+  const { data, error } = await supabase
+    .from('reservations')
+    .update({ payment_status: 'refunded', refunded_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('payment_status', 'refund_pending')
+    .select(reservationSelect)
+    .single();
+  throwIfError(error);
+  return mapReservation(data);
 }
